@@ -1,0 +1,28 @@
+#ifndef libc__sbp
+#define libc__sbp
+
+
+TypeDef C_File = VoidPtr
+
+Declare Function C_fopen cdecl  Lib "msvcrt.dll" _
+	Alias "fopen" _
+	(name As BytePtr, mode As BytePtr) As C_File
+Declare Function C_feof cdecl  Lib "msvcrt.dll" _
+	Alias "feof" _
+	(fIn As C_File) As Long
+Declare Function C_fgets cdecl  Lib "msvcrt.dll" _
+	Alias "fgets" _
+	(outBuf As BytePtr, size As Long, fIn As C_File) As Long
+Declare Function C_fputs cdecl  Lib "msvcrt.dll" _
+	Alias "fputs" _
+	(outBuf As BytePtr, fIn As C_File) As Long
+Declare Sub C_fclose cdecl  Lib "msvcrt.dll" _
+	Alias "fclose" _
+	(f As C_File)
+
+Declare Function C_strchr cdecl  Lib "msvcrt.dll" _
+	Alias "strchr" _
+	(s As BytePtr, c As Long) As BytePtr
+
+
+#endif

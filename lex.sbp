@@ -1,0 +1,126 @@
+'2015 6/2..6/8, 2024
+#ifndef lex__sbp
+#define lex__sbp
+
+#include "libc.sbp"
+#include "file.sbp"
+
+Function IsNam(s$ As String) As Long
+	IsNam= _
+		( (Asc("A")<=Asc(s$)) And (Asc(s$)<=Asc("Z")) ) Or _
+		( (Asc("a")<=Asc(s$)) And (Asc(s$)<=Asc("z")) )
+End Function
+
+Function IsNum(s$ As String) As Long
+	IsNum= _
+		(Asc("0")<=Asc(s$)) And (Asc(s$)<=Asc("9"))
+End Function
+
+Function IsNamOrNum(s$ As String) As Long
+	IsNamOrNum= IsNam(s$) Or IsNum(s$)
+End Function
+
+Function IsNotAny(s$ As String) As Long
+	IsNotAny= FALSE
+End Function
+
+Function IsQrt(s$ As String) As Long
+	IsQrt= (s$ = Ex"\q")
+End Function
+
+Function IsNotQrt(s$ As String) As Long
+	IsNotQrt= (s$ <> Ex"\q")
+End Function
+
+Class SrcFile: Inherits OFile
+	Protected
+		current_token As String
+		current_line As String
+		qt_pos As Long
+
+	Public
+		Sub SrcFile( name As String )
+			OFile(name, "r")
+			current_token= ""
+			current_line= ReadLn()
+		End Sub
+
+		Function AtEol() As Long
+			AtEol= (current_line="")
+		End Function
+
+		Sub NextLine()
+			current_line= ReadLn()
+
+			TrimLeft(current_line)
+			qt_pos= InStr(1, current_line, Ex"\q")
+			If qt_pos=0 Then _
+				qt_pos= Len(current_line)
+		End Sub
+
+		Function ReadToken() As String
+			Dim i As Long
+			Dim l As Long
+			Dim f As *Function(param_s As String) As Long
+			Dim sizeOfLastNoise As Long
+			Dim c As String
+			TrimLeft(current_line)
+
+			If (AtEof()) Or (AtEol()) Then
+				ReadToken= ""
+			Else
+				l= Len(current_line)
+				c= Mid$(current_line, 1,1)
+				sizeOfLastNoise= 0
+				If IsNam(c) Then
+					f= AddressOf(IsNamOrNum)
+				ElseIf IsNum(c) Then
+					f= AddressOf(IsNum)
+				ElseIf IsQrt(c) Then
+					f= AddressOf(IsNotQrt)
+					sizeOfLastNoise= 1
+				Else
+					f= AddressOf(IsNotAny)
+				End If
+
+				i= 1
+				c= Mid$(current_line, i,1)
+				Do
+					i+= 1
+					If l<i Then
+						sizeOfLastNoise= 0
+						Exit Do
+					End If
+					c= Mid$(current_line, i,1)
+				Loop While f(c)
+				i+= sizeOfLastNoise
+
+				ReadToken= Left$(current_line, i-1)
+				current_line= Right$(current_line, l-(i-1))
+			End If
+
+			current_token= ReadToken
+		End Function
+
+		Sub UnReadToken()
+			current_line= current_token+" "+current_line
+			current_token=""
+		End Sub
+
+		Sub TrimLeft(ByRef s As String)
+			Dim i As Long
+			Dim l As Long
+			i= 1
+			l= Len(s)
+			While i<=l
+				If InStr(1, Ex" \t\r\n", Mid$(s, i,1))=0 Then _
+					Exit While
+				i+= 1
+			Wend
+
+			s= Mid$(s, i)
+		End Sub
+End Class
+
+
+#endif

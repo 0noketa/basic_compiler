@@ -1,0 +1,220 @@
+'2015 ..6/8, 2024
+#ifndef src__sbp
+#define src__sbp
+
+
+#include "lex.sbp"
+#include "expr.sbp"
+
+
+Const max_vars_count = 256
+
+Dim vars[max_vars_count] As String
+Dim vars_count As Long
+
+vars_count= 0
+
+Function IsVar(s As String) As Long
+	Dim i As Long
+
+	IsVar = (0 = 0)
+	i = 0
+	While i < vars_count
+		If vars[i] = s Then  Exit Function
+
+		i += 1
+	Wend
+
+	IsVar = (0 <> 0)
+End Function
+
+Function UseVar(s As String) As String
+	UseVar = s
+
+	If IsVar(s) Then  Exit Function
+
+	If vars_count < max_vars_count Then
+		vars[vars_count] = s
+		vars_count += 1
+	End If
+End Function
+
+
+Class BasicSrc
+	Inherits SrcFile
+
+	Protected
+		lines_nums As *Long
+		lines As *Expr
+		lines_count As Long
+
+	Public
+		Sub BasicSrc( name As String )
+			SrcFile(name)
+
+			current_token= ""
+		End Sub
+
+		Sub ~BasicSrc()
+		End Sub
+
+		Sub loadArgs( e As *Expr )
+			Dim s As String
+
+			If ReadToken() = ")" Then _
+				Exit Sub
+	
+			UnReadToken()
+	
+			Do
+				e->AddArg( compileExpr() )
+				s= ReadToken()
+			Loop While s=","
+
+			If s<>")" Then _
+				UnReadToken()
+		End Sub
+
+		Function compileVal() As *Expr
+			Dim e As *Expr
+			Dim s As String
+
+			s= ReadToken()
+			If s="(" Then
+				e= compileExpr()
+				ReadToken()
+			ElseIf IsNum(Mid$(s, 1,1)) Then
+				e= New Expr()
+				e->SetOpr("val")
+				e->SetVal(s)
+			ElseIf IsNam(Mid$(s, 1,1)) Then
+				e= New Expr()
+				e->SetOpr("val")
+				e->SetVal(UseVar(s))
+			Else
+				UnReadToken()
+				e= NULL
+			End If
+			compileVal= e
+		End Function
+
+		/* �����\�ȊK�w�Q */
+		Function compileExprMul() As *Expr
+			Dim r As *Expr
+			Dim e As *Expr
+			Dim s As String
+
+			r= compileVal()
+			While TRUE
+				s= ReadToken()
+				If (s="*") Or (s="/") Or (s="MOD") Then
+					e= New Expr()
+					e->SetOpr(s)
+					e->AddArg( r )
+					e->AddArg( compileVal() )
+					r= e
+				Else
+					If s<>"" Then _
+						UnReadToken()
+
+					compileExprMul= r
+					Exit While
+				End If
+			Wend
+		End Function
+		Function compileExprAdd() As *Expr
+			Dim r As *Expr
+			Dim e As *Expr
+			Dim s As String
+
+			r= compileExprMul()
+			While TRUE
+				s= ReadToken()
+				If (s="+") Or (s="-") Then
+					e= New Expr()
+					e->SetOpr(s)
+					e->AddArg( r )
+					e->AddArg( compileExprMul() )
+					r= e
+				Else
+					If s<>"" Then _
+						UnReadToken()
+
+					compileExprAdd= r
+					Exit While
+				End If
+			Wend
+		End Function
+		Function compileExprCmp() As *Expr
+			Dim r As *Expr
+			Dim e As *Expr
+			Dim s As String
+
+			r= compileExprAdd()
+			While TRUE
+				s= ReadToken()
+				If (s="<") Or (s=">") Or (s="=") Then
+					e= New Expr()
+					e->SetOpr(s)
+					e->AddArg( r )
+					e->AddArg( compileExprAdd() )
+					r= e
+				Else
+					If s<>"" Then _
+						UnReadToken()
+
+					compileExprCmp= r
+					Exit While
+				End If
+			Wend
+		End Function
+
+		Function compileExpr() As *Expr
+			compileExpr= compileExprCmp()
+		End Function
+
+		Function InferExprType(e As *Expr, update As Long) As String
+			Dim left_type As String
+			Dim right_type As String
+			Dim result As String
+			Dim _val As String
+
+			_val = e->GetVal()
+			result = e->GetType()
+			If e->OprIs("val") Then
+				If IsNum(Mid$(_val, 1,1)) Then
+					result = "Integer"
+				ElseIf Mid$(_val, 1,1) = Chr(34)  Then
+					result = "String"
+				ElseIf IsVar(_val) Then
+					result = "Integer"
+				End If
+			ElseIf e->OprIs("+") Then
+				If e->GetArgc() = 2 Then
+					left_type = InferExprType(e->GetArgv(0), update)
+					right_type = InferExprType(e->GetArgv(1), update)
+					result = left_type
+				End If
+			ElseIf e->OprIs("-") Or  e->OprIs("*") Or e->OprIs("/") Or e->OprIs("MOD") Then
+				If e->GetArgc() = 2 Then
+					left_type = InferExprType(e->GetArgv(0), update)
+					right_type = InferExprType(e->GetArgv(1), update)
+
+					If left_type <> right_type Then
+						result = "ErrorType"
+					Else
+						result = left_type
+					End If
+				End If
+			End If
+
+			If update <> 0 Then  e->SetType(result)
+
+			GetInferedType = result
+		End Function
+
+End Class
+
+
+#endif
+

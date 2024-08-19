@@ -1,0 +1,126 @@
+'2015 6/4, 2024
+#ifndef expr__sbp
+#define expr__sbp
+
+Class Ctx
+End Class
+
+Class Expr
+	Protected
+		self As *Expr
+		ctx As *Ctx
+		argv As **Expr
+		argc As Long
+		opr As String
+		_val As String
+		_type As String
+
+	Public
+		Sub Expr()
+			self= NULL
+			ctx = NULL
+			argv = malloc(SizeOf(*Expr))
+			argc = 0
+			opr = ""
+			_val = ""
+			_type = ""
+		End Sub
+
+		Sub ~Expr()
+			Dim i As Long
+			If argv<>NULL Then
+				If 0<argc Then
+					For i= 0 To argc-1
+						delete argv[i]
+					Next
+				End If
+
+				free(argv)
+			End If
+		End Sub
+
+		Function MakeExpr() As *Expr
+			Dim e As *Expr
+			e= New Expr()
+			e->ctx= ctx
+		End Function
+
+		Function Clone() As *Expr
+			Dim e As *Expr
+			Dim arg As *Expr
+			Dim i As Long
+
+			e= New Expr()
+			e->opr= opr
+			e->ctx= ctx
+			e->_val= _val
+			e->self= self
+			For i= 0 To argc-1
+				arg= argv[i]->Clone()
+				e->AddArg(arg)
+			Next
+		End Function
+
+		Function SetSelf(e As *Expr) As *Expr
+			self = e
+			SetSelf = self
+		End Function
+
+		Function SetOpr(s As String) As *Expr
+			opr = s
+			SetOpr = self
+		End Function
+
+		Function SetVal(s As String) As *Expr
+			_val= s
+			SetVal = self
+		End Function
+
+		Function SetType(s As String) As *Expr
+			_type = s
+			SetType = self
+		End Function
+
+		Function AddArg(e As *Expr) As *Expr
+			argc+= 1
+			argv= realloc(argv, SizeOf(*Expr)*argc)
+			argv[argc-1]= e
+			addArg = self
+		End Function
+
+		Function GetSelf() As *Expr
+			GetSelf= self
+		End Function
+
+		Function GetOpr() As String
+			GetOpr= opr
+		End Function
+
+		Function GetVal() As String
+			GetVal= _val
+		End Function
+
+		Function GetType() As String
+			GetType= _type
+		End Function
+
+		Function GetArgc() As Long
+			GetArgc= argc
+		End Function
+
+		Function GetArgv(i As Long) As *Expr
+			If (0 <= i) And (i < argc) Then
+				GetArgv = argv[i]
+			Else
+				GetArgv = NULL
+			End If
+		End Function
+
+		Function OprIs(s As String) As Long
+			OprIs= (opr=s)
+		End Function
+
+
+
+
+#endif

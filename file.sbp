@@ -1,0 +1,75 @@
+'2015 6/2..6/4, 2024
+#ifndef file__sbp
+#define file__sbp
+
+
+Class OFile
+	Protected
+		name As String
+		mode As String
+		hdl As C_File
+		error As Long
+		newline As String
+
+	Public
+		Sub OFile(prm_name As String, prm_mode As String)
+			name= prm_name
+			mode= prm_mode
+			newline= Chr$(10)
+			hdl= C_fopen(name, mode)
+			error= hdl<>NULL			
+		End Sub
+
+		Sub ~OFile()
+			If hdl<>NULL Then _
+				C_fclose(hdl)
+		End Sub
+
+		Function Error() As Long
+			Error= error
+		End Function
+
+		Function IsOpened() As Long
+			IsOpened= hdl<>NULL
+		End Function
+
+		Function AtEof() As Long
+			AtEof= (hdl=NULL) Or (C_feof(hdl)<>0)
+		End Function
+
+		Function ReadLn() As String
+			Dim buf[255] As Byte
+			Dim p As BytePtr
+			Dim q As BytePtr
+
+			ReadLn= ""
+			If (mode<>"r") Or (hdl=NULL) Then _
+				Exit Function
+
+			p= VarPtr(buf[0])
+
+			While C_feof(hdl)=0
+				C_fgets(p, 254, hdl)
+				q= C_strchr(p, 10)
+				If q<>NULL Then
+					q[0]= 0
+					ReadLn= ReadLn + MakeStr(p)
+					Exit While
+				Else
+					ReadLn= ReadLn + MakeStr(p)
+				End If
+			Wend
+		End Function
+
+
+		Sub WriteLn( s As String )
+			If (mode<>"w") Or (hdl=NULL) Then _
+				Exit Sub
+
+			s= s + newline
+			C_fputs(StrPtr(s), hdl)
+		End Sub
+End Class
+
+
+#endif
