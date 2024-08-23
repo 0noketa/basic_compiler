@@ -10,34 +10,146 @@
 
 Const max_vars_count = 256
 
-Dim Shared vars(0 To max_vars_count) As String
-Dim Shared vars_count As Long = 0
+Type VarDict
+	Protected:
+		_names(0 To max_vars_count) As String
+		_types(0 To max_vars_count) As String
+		_sizes(0 To max_vars_count) As Long
+		_lbounds(0 To max_vars_count) As Long
+		_attrs(0 To max_vars_count) As String
+		_len As Long
+	Public:
+		Declare Constructor()
+		Declare Function Count() As Long
+		Declare Function GetVarName(_idx As Long) As String
+		Declare Function GetVarIndex(_name As String) As Long
+		Declare Function IsVar(_name As String) As Long
+		Declare Function GetArrayLBound(_name As String) As Long
+		Declare Function GetArrayLength(_name As String) As Long
+		Declare Function IsArray(_name As String) As Long
+		Declare Function IsExtern(_name As String) As Long
+		Declare Function GetVarType(_name As String) As String
+		Declare Sub AddVar(_name As String, _type As String, _size As Long, _lbound As Long, _attr As String)
+		Declare Sub AddIntVar(_name As String)
+		Declare Sub AddIntArray(_name As String, _len As Long, _lbound As Long)
+		Declare Sub AddExternIntVar(_name As String)
+End Type
 
-Function IsVar(s As String) As Long
+Constructor VarDict()
+	_len = 0
+End Constructor
+Function VarDict.Count() As Long
+	Return _len
+End Function
+Function VarDict.GetVarName(_idx As Long) As String
+	If (_idx < 0) Or (_idx >= _len) Then  Return ""
+	Return _names(_idx)
+End Function
+Function VarDict.GetVarIndex(_name As String) As Long
 	Dim i As Long
 
 	i = 0
-	While i < vars_count
-		If vars(i) = s Then  Return (0 = 0)
+	While i < _len
+		If _names(i) = _name Then  Return i
 
-		i+= 1
+		i += 1
 	Wend
 
-	Return (0 <> 0)
+	Return -1
 End Function
+Function VarDict.IsVar(_name As String) As Long
+	Return (GetVarIndex(_name) <> -1)
+End Function
+Function VarDict.GetArrayLBound(_name As String) As Long
+	Dim i As Long = GetVarIndex(_name)
+	If i = -1 Then  Return -1
+
+	Return _lbounds(i)
+End Function
+Function VarDict.GetArrayLength(_name As String) As Long
+	Dim i As Long = GetVarIndex(_name)
+	If i = -1 Then  Return -1
+
+	Return _sizes(i)
+End Function
+Function VarDict.IsArray(_name As String) As Long
+	Return (GetArrayLength(_name) <> -1)
+End Function
+Function VarDict.IsExtern(_name As String) As Long
+	Dim i As Long = GetVarIndex(_name)
+	If i = -1 Then  Return (0 <> 0)
+
+	Return (InStr(1, _attrs(i), "e") <> 0)
+End Function
+Function VarDict.GetVarType(_name As String) As String
+	Dim i As Long = GetVarIndex(_name)
+	If i = -1 Then  Return "error_type"
+
+	Return _types(i)
+End Function
+Sub VarDict.AddVar(_name As String, _type As String, _size As Long, _lbound As Long, _attr As String)
+	If IsVar(_name) Then  Return
+
+	If _len < max_vars_count Then
+		_names(_len) = _name
+		_types(_len) = _type
+		_sizes(_len) = _size
+		_lbounds(_len) = _lbound
+		_attrs(_len) = _attr
+		_len += 1
+	End If
+End Sub
+Sub VarDict.AddIntVar(_name As String)
+	AddVar(_name, "Integer", -1, 0, "")
+End Sub
+Sub VarDict.AddIntArray(_name As String, _len As Long, _lbound As Long)
+	AddVar(_name, "Integer", _len, _lbound, "")
+End Sub
+Sub VarDict.AddExternIntVar(_name As String)
+	AddVar(_name, "Integer", -1, 0, "e")
+End Sub
+
+
+
+Dim Shared vars As VarDict
+
+Function VarsCount() As Long
+	Return vars.Count()
+End Function
+
+Function IsVar(s As String) As Long
+	Return vars.IsVar(s)
+End Function
+
+Sub AddIntVar(s As String)
+	If vars.IsVar(s) Then  Return
+
+	vars.AddIntVar(s)
+End Sub
+
+Sub AddExternIntVar(s As String)
+	If vars.IsVar(s) Then  Return
+
+	vars.AddExternIntVar(s)
+End Sub
+
+Sub AddIntArray(s As String, _len As Long, _lbound As Long)
+	If vars.IsVar(s) Then  Return
+
+	vars.AddIntArray(s, _len, _lbound)
+End Sub
 
 Function UseVar(s As String) As String
 	Dim result As String = s
 
 	If IsVar(s) Then  Return result
 
-	If vars_count < max_vars_count Then
-		vars(vars_count) = s
-		vars_count+ = 1
-	End If
+	AddIntVar(s)
 
 	Return result
 End Function
+
+
 
 
 Type BasicSrc
@@ -76,14 +188,14 @@ End Type
 
 
 Constructor BasicSrc()
-	lines_nums = NULL
-	lines = NULL
 End Constructor
 
 Sub BasicSrc.Init( _name As String )
 	_src.Init(_name)
 
 	_src.CurrentToken= ""
+	lines_nums = NULL
+	lines = NULL
 End Sub
 
 Destructor BasicSrc()
@@ -94,25 +206,22 @@ End Destructor
 Sub BasicSrc.loadArgs( e As Expr Ptr )
 	Dim s As String
 
-	If ReadToken() = ")" Then
-		Exit Sub
-	End If
+	If ReadToken() = ")" Then  Exit Sub
 
 	UnReadToken()
 
 	Do
 		e->AddArg( compileExpr() )
-		s= ReadToken()
-	Loop While s=","
+		s = ReadToken()
+	Loop While s = ","
 
-	If s<>")" Then
-		UnReadToken()
-	End If
+	If s <> ")" Then  UnReadToken()
 End Sub
 
 Function BasicSrc.compileVal() As Expr Ptr
 	Dim e As Expr Ptr
 	Dim s As String
+	Dim s2 As String
 
 	s= ReadToken()
 	If s="(" Then
@@ -123,9 +232,19 @@ Function BasicSrc.compileVal() As Expr Ptr
 		e->SetOpr("val")
 		e->SetVal(s)
 	ElseIf IsNam(Mid$(s, 1,1)) Then
-		e= New Expr()
-		e->SetOpr("val")
-		e->SetVal(UseVar(s))
+		s2 = ReadToken()
+		If s2 = "(" Then
+			e= New Expr()
+			e->SetOpr("apply")
+			e->SetVal(s)
+			e->AddArg(compileExpr())
+			ReadToken()
+		Else
+			UnReadToken()
+			e= New Expr()
+			e->SetOpr("val")
+			e->SetVal(UseVar(s))
+		End If
 	Else
 		UnReadToken()
 		e= NULL
@@ -148,9 +267,8 @@ Function BasicSrc.compileExprMul() As Expr Ptr
 			e->AddArg( compileVal() )
 			r= e
 		Else
-			If s<>"" Then
-				UnReadToken()
-			End If
+			If s<>"" Then  UnReadToken()
+
 			Return r
 			Exit While
 		End If
@@ -171,11 +289,9 @@ Function BasicSrc.compileExprAdd() As Expr Ptr
 			e->AddArg( compileExprMul() )
 			r= e
 		Else
-			If s<>"" Then
-				UnReadToken()
-			End If
+			If s<>"" Then  UnReadToken()
+
 			Return r
-			Exit While
 		End If
 	Wend
 End Function
@@ -194,9 +310,7 @@ Function BasicSrc.compileExprCmp() As Expr Ptr
 			e->AddArg( compileExprAdd() )
 			r= e
 		Else
-			If s<>"" Then
-				UnReadToken()
-			End If
+			If s<>"" Then  UnReadToken()
 
 			Return r
 			Exit While

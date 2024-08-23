@@ -1,0 +1,38 @@
+EXTERN PRINTI
+GLOBAL I
+GLOBAL ENTRY
+DIM A(0 TO 64)
+
+
+FIB:
+	M = N
+	N = 0
+	I = 1
+	J = 0
+FIB0:
+	A(LBOUND(A) + N) = I
+	K = I
+	I = I + J
+	J = K
+
+	IF N < M N = N + 1: GOTO FIB0
+	RETURN
+
+DUMP:
+	M = N
+	N = 0
+DUMP0:
+	I = A(LBOUND(A) + N)
+	GOSUB PRINTI
+
+	IF N < M N = N + 1: GOTO DUMP0
+	RETURN
+
+
+ENTRY:
+	N = 10
+	GOSUB FIB
+
+	N = 10
+	GOSUB DUMP
+	RETURN

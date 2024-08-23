@@ -39,30 +39,101 @@ Class BasicCompiler
 			int_size = n
 		End Sub
 		Function wordName() As String
-			If int_size = 64 Then  Return "qword"
-			If int_size = 32 Then  Return "dword"
-			wordName = "word"
+			If int_size = 64 Then
+				wordName = "qword"
+			ElseIf int_size = 32 Then
+				wordName = "dword"
+			Else
+				wordName = "word"
+			End If
 		End Function
 
 		Function dataDefName() As String
-			If int_size = 64 Then  Return "dq"
-			If int_size = 32 Then  Return "dd"
-			dataDefName = "dw"
+			If int_size = 64 Then
+				dataDefName = "q"
+			ElseIf int_size = 32 Then
+				dataDefName = "d"
+			Else
+				dataDefName = "w"
+			End If
 		End Function
 
 		Function registerName(code As String) As String
-			If InStr(1, "acdb", code) = 0 Then  Return "error_reg"
-			If int_size = 64 Then  Return "r" + code + "x"
-			If int_size = 32 Then  Return "e" + code + "x"
-			registerName = code + "x"
+			If InStr(1, "acdb", code) = 0 Then
+				registerName = "error_reg"
+			ElseIf int_size = 64 Then
+			  	registerName = "r" + code + "x"
+			ElseIf int_size = 32 Then
+			  	registerName = "e" + code + "x"
+			Else
+				registerName = code + "x"
+			End If
 		End Function
 
 		Sub printExprVal(e As *Expr)
+			Dim e2 As *Expr
+			Dim _len As Long
+			Dim _lbound As Long
 			Dim s As String
-			If e->GetArgc() <> 0 Then
-				print "* error *"
-			Else
+			If e->GetOpr() = "apply" Then
+				If e->GetArgc() = 0 Then
+					print "* error *"
+					Exit Sub
+				End If
+
 				s = e->GetVal()
+				If s = "LEN" Then
+					e2 = e->GetArgv(0)
+					s = e2->GetVal()
+					If vars.IsArray(s) Then
+						print "push " + Str(vars.GetArrayLength(s))
+					Else
+						print "push 1"
+					End If
+				ELseIf s = "LBOUND" Then
+					e2 = e->GetArgv(0)
+					s = e2->GetVal()
+					If vars.IsArray(s) Then
+						print "push " + Str(vars.GetArrayLBound(s))
+					Else
+						print "push 0"
+					End If
+				ELseIf s = "UBOUND" Then
+					e2 = e->GetArgv(0)
+					s = e2->GetVal()
+					If vars.IsArray(s) Then
+						print "push " + Str(vars.GetArrayLBound(s) + vars.GetArrayLength(s) - 1)
+					Else
+						print "push 0"
+					End If
+				ElseIf vars.IsArray(s) Then
+					printExpr(e->GetArgv(0))
+					_lbound = vars.GetArrayLBound(s)
+
+					If int_size = 16 Then
+						print "pop " + registerName("b")
+						If _lbound <> 0 Then
+							print "sub " + registerName("b") + ", " + Str(_lbound)
+						End If
+						print "shl " + registerName("b") + ", " + Str(int_size / 8)
+						print "add " + registerName("b") + ", " + s
+						print "push " + wordName() + "[" + registerName("b") + "]"
+					Else
+						print "pop " + registerName("a")
+						If _lbound <> 0 Then
+							print "sub " + registerName("a") + ", " + Str(_lbound)
+						End If
+						print "push " + wordName() + "[" + s + "+" + registerName("a") + "*" + Str(int_size / 8) + "]"
+					End If
+				End If
+			Else
+				If e->GetArgc() <> 0 Then
+					print "* error *"
+					Exit Sub
+				End If
+
+				s = e->GetVal()
+				If e->GetType() = "Integer" Then  print ";int"
 				If IsNum(Mid$(s, 1,1)) Then
 					print "push " + wordName() + " " + s
 				Else
@@ -176,17 +247,19 @@ Class BasicCompiler
 		Sub compile()
 			Dim e As *Expr
 			Dim i As Long
+			Dim _len As Long
+			Dim _lbound As Long
 			Dim line_number As Long
 			Dim new_line_number As Long
+			Dim line_label_is_requird As Long
 			Dim s As String
+			Dim s2 As String
 
-			If Not IsOpened() Then _
-				Exit Sub
+			If Not IsOpened() Then  Exit Sub
 
 			print "bits " + Str(int_size)
 			print "section .text"
 
-			vars_count = 0
 			line_number = 1
 			While Not AtEof()
 				line_label_is_requird = 0
@@ -201,9 +274,10 @@ Class BasicCompiler
 					new_line_number = Int(Val(s))
 					If new_line_number < line_number Then
 						print "; error: line numbers can not be reused"
-						Return
+						Exit Sub
 					End If
 					line_number = new_line_number
+
 					s = ReadToken()
 				End If
 
@@ -213,9 +287,19 @@ Class BasicCompiler
 					Continue
 				End If
 
-				If lines_are_disabled = 0 Then _
+				If lines_are_disabled = 0 Then
 					print "BC_LINE_" + Str$(line_number) + ":"
-
+				End If
+				' QB/VB label
+				If IsNam(Mid$(s, 1,1)) Then
+					If ReadToken() = ":" Then
+						print s + ":"
+						s = ReadToken()
+						print "; next: " + s 
+					Else
+						UnReadToken()
+					End If
+				End If
 
 				Do
 					If s = "*" Then
@@ -229,6 +313,24 @@ Class BasicCompiler
 					ElseIf s = "EXTERN" Then
 						s = ReadToken()
 						print "extern " + s
+						AddExternIntVar(s)
+					ElseIf s = "DIM" Then
+						s = ReadToken()
+						If ReadToken() = "(" Then
+							s2 = ReadToken()
+							_len = CInt(s2)
+							_lbound = 1
+							If ReadToken() = "TO" Then
+								_lbound = _len
+								s2 = ReadToken()
+								_len = CInt(s2) - _lbound + 1
+								ReadToken()
+							End If
+							AddIntArray(s, _len, _lbound)
+						Else
+							UnReadToken()
+							AddIntVar(s)
+						End If
 					ElseIf s = "GOTO" Then
 						s = ReadToken()
 						If s = "*" Then
@@ -237,18 +339,28 @@ Class BasicCompiler
 
 						If IsNum(Mid$(s, 1,1)) Then
 							s = "BC_LINE_" + s
+							If lines_are_disabled = 1 Then
+								print "; line labels are disabled"
+								Exit Sub
+							End If
 						End If
 						print "jmp " + s
 					ElseIf s = "IF" Then
 						e = compileExpr()
 						s = ReadToken()
-						If s = "THEN" Then _
+						If s = "THEN" Then
 							s = ReadToken()
+						End If
 
 						If IsNum(Mid$(s,1,1)) Then
 							printCondJump(e,TRUE,"BC_LINE_" + s)
+
+							If lines_are_disabled = 1 Then
+								print "; line labels are disabled"
+								Exit Sub
+							End If
 						Else
-							printCondJump(e,FALSE,"BC_LINE_" + Str$(line_number) + ".END")
+							printCondJump(e,FALSE,"BC_LINE_" + Str$(line_number) + "_END")
 							line_label_is_requird = 1
 						'	UnReadToken()
 							Continue
@@ -261,19 +373,55 @@ Class BasicCompiler
 
 						If IsNum(Mid$(s, 1,1)) Then
 							s = "BC_LINE_" + s
+
+							If lines_are_disabled = 1 Then
+								print "; line labels are disabled"
+								Exit Sub
+							End If
 						End If
 						print "call " + s
 					ElseIf s = "RETURN" Then
 						print "ret"
 					ElseIf (s <> "") And (s <> ":") Then
-						If s = "LET" Then _
+						If s = "LET" Then
 							s = ReadToken()
+						End If
 
-						If ReadToken()="=" Then
+						s2 = ReadToken()
+						If s2 = "(" Then
+							_lbound = vars.GetArrayLBound(s)
+							UnReadToken()
+							e = _src.compileVal()
+							printExpr(e)
+							If ReadToken() = "=" Then
+								If int_size = 16 Then
+									e = compileExpr()
+									printExpr(e)
+									print "pop " + registerName("a")
+									print "pop " + registerName("b")
+									If _lbound <> 0 Then
+										print "sub " + registerName("b") + ", " + Str(_lbound)
+									End If
+									print "shl " + registerName("b") + ", " + Str(int_size / 8)
+									print "add " + registerName("b") + ", " + s
+									print "mov [" + registerName("b") + "], " + registerName("a")
+								Else
+									e = compileExpr()
+									printExpr(e)
+									print "pop " + registerName("d")
+									print "pop " + registerName("a")
+									If _lbound <> 0 Then
+										print "sub " + registerName("a") + ", " + Str(_lbound)
+									End If
+									print "mov [" + s + "+" + registerName("a") + "*" + Str(int_size / 8) + "], " + registerName("d")
+								End If
+							End If
+						ElseIf s2 = "=" Then
+							print ";var_store"
 							e = compileExpr()
 							printExpr(e)
+							print "pop " + wordName() + "[" + UseVar(s) + "]"
 						End If
-						print "pop " + wordName() + "[" + UseVar(s) + "]"
 					End If
 
 					s = ReadToken()
@@ -285,7 +433,7 @@ Class BasicCompiler
 				Loop
 
 				If lines_are_disabled = 0 Or line_label_is_requird = 1 Then
-					print "BC_LINE_"+Str$(line_number) + ".END:"
+					print "BC_LINE_"+Str$(line_number) + "_END:"
 					line_label_is_requird = 0
 				End If
 
@@ -293,23 +441,39 @@ Class BasicCompiler
 				line_number += 1
 			Wend
 
-			If 0 < vars_count Then
+			If 0 < vars.Count() Then
+				print "section .bss"
+				For i = 0 To vars.Count() - 1
+					s = vars.GetVarName(i)
+					If vars.IsExtern(s) Then  Continue For
+
+					If vars.IsArray(s) Then
+						print s + ": res" + dataDefName() + " " + Str$(vars.GetArrayLength(s))
+					End If
+				Next
+
 				print "section .data"
-				For i = 0 To vars_count - 1
-			print vars(i) + ": " + dataDefName() + " 0"
+				For i = 0 To vars.Count() - 1
+					s = vars.GetVarName(i)
+					If vars.IsExtern(s) Then  Continue For
+
+					If Not vars.IsArray(s) Then
+						print s + ": d" + dataDefName() + " 0"
+					End If
 				Next
 			End If
 		End Sub
 End Class
 
-Dim no_lines As Long
+Dim no_line As Long
 Dim int_size As Long
-no_lines = 0
+no_line = 0
 int_size = 32
 
 Sub compile(s As String)
 	Dim fIn As BasicCompiler(s)
-	If no_lines = 1 Then fIn.disableLineNumbers()
+	If no_line = 1 Then fIn.disableLineNumbers()
+	fIn.setIntSize(int_size)
 	fIn.compile()
 End Sub
 
@@ -321,7 +485,7 @@ Sub Main()
 
 	If argc <= 1 Then
 		print "bc [option ...] [file ...]"
-		print "  -nolines      supress implicit line_labels"
+		print "  -noline       supress implicit line-labels"
 		print "  -o name       select output file (not implemented)"
 		print "  -int N        select integer/pointer register size (16|32|64)"
 		Exit Sub
@@ -331,8 +495,7 @@ Sub Main()
 	While i < Argc
 		arg = Argv$(i)
 
-		If Mid$(arg, 1,1) <> "-" Then _
-			Exit While
+		If Mid$(arg, 1,1) <> "-" Then  Exit While
 
 		If arg = "-o" Then
 			 i += 1
@@ -344,16 +507,17 @@ Sub Main()
 			If i < Argc Then
 				int_size = CInt(Argv$(i))
 			End If
-		ElseIf arg = "-nolines" Then
-			no_lines = 1
+		ElseIf arg = "-noline" Then
+			no_line = 1
 		End If
 		 i += 1
 	Wend
 
 	If i < Argc Then
 		fIn_name = Argv$(i)
-		If fOut_name = "" Then _
+		If fOut_name = "" Then
 			fOut_name = fIn_name +".asm"
+		End If
 
 		compile(Argv$(i))
 	End If
