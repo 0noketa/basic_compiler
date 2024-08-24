@@ -17,11 +17,13 @@ Type BasicCompiler
 		_src As BasicSrc
 		lines_are_disabled As Long
 		int_size As Long
+		use_thread_local As Long
 	Public:
 		Declare Constructor()
 		Declare Sub Init(s As String)
 		Declare Sub disableLineNumbers()
 		Declare Sub setIntSize(n As Long)
+		Declare Sub enableThreadLocalStorage(_enable As Long)
 		Declare Function wordName() As String
 		Declare Function dataDefName() As String
 		Declare Function registerName(code As String) As String
@@ -49,6 +51,7 @@ Sub BasicCompiler.Init(s As String)
 
 	lines_are_disabled = 0
 	int_size = 32
+	use_thread_local = 0
 End Sub
 
 
@@ -60,6 +63,9 @@ Sub BasicCompiler.setIntSize(n As Long)
 	if n <> 16 And n <> 32 And n <> 64 Then  Return
 
 	int_size = n
+End Sub
+Sub BasicCompiler.enableThreadLocalStorage(_enable As Long)
+	use_thread_local = _enable
 End Sub
 
 Function BasicCompiler.wordName() As String
@@ -107,7 +113,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 		End If
 
 		s = e->GetVal()
-		If s = "LEN" Then
+		If UpperStr(s) = "LEN" Then
 			e2 = e->GetArgv(0)
 			s = e2->GetVal()
 			If vars.IsArray(s) Then
@@ -115,7 +121,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			Else
 				print "push 1"
 			End If
-		ELseIf s = "LBOUND" Then
+		ELseIf UpperStr(s) = "LBOUND" Then
 			e2 = e->GetArgv(0)
 			s = e2->GetVal()
 			If vars.IsArray(s) Then
@@ -123,7 +129,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			Else
 				print "push 0"
 			End If
-		ELseIf s = "UBOUND" Then
+		ELseIf UpperStr(s) = "UBOUND" Then
 			e2 = e->GetArgv(0)
 			s = e2->GetVal()
 			If vars.IsArray(s) Then
@@ -148,7 +154,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 				If _lbound <> 0 Then
 					print "sub " + registerName("a") + ", " + Str(_lbound)
 				End If
-				print "push " + wordName() + "[" + s + "+" + registerName("a") + "*" + Str(int_size / 8) + "]"
+				print "push " + wordName() + "[" + vars.CorrectVarName(s) + "+" + registerName("a") + "*" + Str(int_size / 8) + "]"
 			End If
 		End If
 	Else
@@ -162,7 +168,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 		If IsNum(Mid$(s, 1,1)) Then
 			print "push " + wordName() + " " + s
 		Else
-			print "push " + wordName() + "[" + s + "]"
+			print "push " + wordName() + "[" + vars.CorrectVarName(s) + "]"
 		End If
 	End If
 End Sub
@@ -171,7 +177,7 @@ Sub BasicCompiler.printExprMul(e As Expr Ptr)
 	Dim i As Long
 	Dim s As String
 	s = e->GetOpr()
-	If (s = "*") Or (s = "/") Or (s = "MOD") Then
+	If (s = "*") Or (s = "/") Or (UpperStr(s) = "MOD") Then
 		If e->GetArgc() <> 2 Then
 			print "* error in mul/div/mod *"
 		Else
@@ -187,7 +193,7 @@ Sub BasicCompiler.printExprMul(e As Expr Ptr)
 				print "idiv " + registerName("c")
 			End If
 
-			If s = "MOD" Then
+			If UpperStr(s) = "MOD" Then
 				print "push " + registerName("d")
 			Else
 				print "push " + registerName("a")
@@ -306,7 +312,7 @@ Sub BasicCompiler.compile()
 			s = ReadToken()
 		End If
 
-		If (s = "") Or (s = "REM") Or (s = "'") Then
+		If (s = "") Or (UpperStr(s) = "REM") Or (s = "'") Then
 			_src.NextLine()
 			line_number += 1
 			Continue While
@@ -333,20 +339,44 @@ Sub BasicCompiler.compile()
 				s = ReadToken()
 			End If
 
-			If s = "GLOBAL" Then
+			If UpperStr(s) = "GLOBAL" Then
 				s = ReadToken()
 				print "global " + s
-			ElseIf s = "EXTERN" Then
+			ElseIf UpperStr(s) = "EXTERN" Then
 				s = ReadToken()
 				print "extern " + s
 				AddExternIntVar(s)
-			ElseIf s = "DIM" Then
+			ElseIf UpperStr(s) = "DECLARE" Then
+				s = ReadToken()
+				If UpperStr(s) <> "SUB" Then
+					Print "; declaration of unknown element " + s
+					Return
+				Else
+					s = ReadToken()
+					print "extern " + s
+					AddExternIntVar(s)
+
+					s = ReadToken()
+					If UpperStr(s) = "CDECL" Then
+						s = ReadToken()
+					End If
+
+					If s = "(" Then
+						If ReadToken() <> ")" Then
+							Print "; decl of procedure with params are not implemented"
+							Return
+						End If
+					Else
+						UnReadToken()
+					End If
+				End If
+			ElseIf UpperStr(s) = "DIM" Then
 				s = ReadToken()
 				If ReadToken() = "(" Then
 					s2 = ReadToken()
 					_len = CInt(s2)
 					_lbound = 1
-					If ReadToken() = "TO" Then
+					If UpperStr(ReadToken()) = "TO" Then
 						_lbound = _len
 						s2 = ReadToken()
 						_len = CInt(s2) - _lbound + 1
@@ -357,7 +387,7 @@ Sub BasicCompiler.compile()
 					UnReadToken()
 					AddIntVar(s)
 				End If
-			ElseIf s = "GOTO" Then
+			ElseIf UpperStr(s) = "GOTO" Then
 				s = ReadToken()
 				If s = "*" Then
 					s = ReadToken()
@@ -371,10 +401,10 @@ Sub BasicCompiler.compile()
 					End If
 				End If
 				print "jmp " + s
-			ElseIf s = "IF" Then
+			ElseIf UpperStr(s) = "IF" Then
 				e = _src.compileExpr()
 				s = ReadToken()
-				If s = "THEN" Then
+				If UpperStr(s) = "THEN" Then
 					s = ReadToken()
 				End If
 
@@ -391,7 +421,7 @@ Sub BasicCompiler.compile()
 				'	UnReadToken()
 					Continue Do
 				End If
-			ElseIf s = "GOSUB" Or s = "CALL" Then
+			ElseIf UpperStr(s) = "GOSUB" Or UpperStr(s) = "CALL" Then
 				s = ReadToken()
 				If s = "*" Then
 					s = ReadToken()
@@ -406,10 +436,10 @@ Sub BasicCompiler.compile()
 					End If
 				End If
 				print "call " + s
-			ElseIf s = "RETURN" Then
+			ElseIf UpperStr(s) = "RETURN" Then
 				print "ret"
 			ElseIf (s <> "") And (s <> ":") Then
-				If s = "LET" Then
+				If UpperStr(s) = "LET" Then
 					s = ReadToken()
 				End If
 
@@ -430,7 +460,7 @@ Sub BasicCompiler.compile()
 								print "sub " + registerName("b") + ", " + Str(_lbound)
 							End If
 							print "shl " + registerName("b") + ", " + Str(int_size / 8)
-							print "add " + registerName("b") + ", " + s
+							print "add " + registerName("b") + ", " + vars.CorrectVarName(s)
 							print "mov [" + registerName("b") + "], " + registerName("a")
 						Else
 							e = _src.compileExpr()
@@ -440,7 +470,7 @@ Sub BasicCompiler.compile()
 							If _lbound <> 0 Then
 								print "sub " + registerName("a") + ", " + Str(_lbound)
 							End If
-							print "mov [" + s + "+" + registerName("a") + "*" + Str(int_size / 8) + "], " + registerName("d")
+							print "mov [" + vars.CorrectVarName(s) + "+" + registerName("a") + "*" + Str(int_size / 8) + "], " + registerName("d")
 						End If
 					End If
 				ElseIf s2 = "=" Then
@@ -469,7 +499,11 @@ Sub BasicCompiler.compile()
 	Wend
 
 	If 0 < vars.Count() Then
-		print "section .bss"
+		If use_thread_local Then
+			print "section .tbss"
+		Else
+			print "section .bss"
+		End If
 		For i = 0 To vars.Count() - 1
 			s = vars.GetVarName(i)
 			If vars.IsExtern(s) Then  Continue For
@@ -479,7 +513,11 @@ Sub BasicCompiler.compile()
 			End If
 		Next
 
-		print "section .data"
+		If use_thread_local Then
+			print "section .tdata"
+		Else
+			print "section .data"
+		End If
 		For i = 0 To vars.Count() - 1
 			s = vars.GetVarName(i)
 			If vars.IsExtern(s) Then  Continue For
@@ -504,6 +542,7 @@ End Sub
 
 Dim Shared no_line As Long = 0
 Dim Shared int_size As Long = 32
+Dim Shared use_thread_local As Long = 0
 
 
 Sub compile(s As String)
@@ -511,6 +550,7 @@ Sub compile(s As String)
 	fIn.Init(s)
 	If no_line = 1 Then fIn.disableLineNumbers()
 	fIn.setIntSize(int_size)
+	fIn.enableThreadLocalStorage(use_thread_local)
 	fIn.compile()
 End Sub
 
@@ -525,6 +565,8 @@ Function my_main cdecl Alias "main" (ByVal Argc As Long, ByVal Argv As ZString P
 		print "  -noline       supress implicit line-labels"
 		print "  -o name       select output file (not implemented)"
 		print "  -int N        select integer/pointer register size (16|32|64)"
+		print "  -tls          thread_local"
+		
 		return 0
 	End If
 
@@ -546,6 +588,8 @@ Function my_main cdecl Alias "main" (ByVal Argc As Long, ByVal Argv As ZString P
 			End If
 		ElseIf arg = "-noline" Then
 			no_line = 1
+		ElseIf arg = "-tls" Then
+			use_thread_local = 1
 		End If
 		i += 1
 	Wend

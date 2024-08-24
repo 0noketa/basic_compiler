@@ -10,6 +10,22 @@
 
 Const max_vars_count = 256
 
+Function UpperStr(s As String) As String
+	Dim c As String
+	Dim s2 As String
+	Dim i As Long
+	Dim j As Long
+
+	s2 = ""
+	j = 1
+	For i = 1 To Len(s)
+		s2 = s2 + Chr(toupper(Asc(Mid$(s, i, 1))))
+	Next
+
+	Return s2
+End Function
+
+
 Type VarDict
 	Protected:
 		_names(0 To max_vars_count) As String
@@ -23,6 +39,7 @@ Type VarDict
 		Declare Function Count() As Long
 		Declare Function GetVarName(_idx As Long) As String
 		Declare Function GetVarIndex(_name As String) As Long
+		Declare Function CorrectVarName(_name As String) As String
 		Declare Function IsVar(_name As String) As Long
 		Declare Function GetArrayLBound(_name As String) As Long
 		Declare Function GetArrayLength(_name As String) As Long
@@ -47,15 +64,22 @@ Function VarDict.GetVarName(_idx As Long) As String
 End Function
 Function VarDict.GetVarIndex(_name As String) As Long
 	Dim i As Long
+	Dim _name2 As String
 
+	_name2 = UpperStr(_name)
 	i = 0
 	While i < _len
-		If _names(i) = _name Then  Return i
+		If UpperStr(_names(i)) = _name2 Then  Return i
 
 		i += 1
 	Wend
 
 	Return -1
+End Function
+Function VarDict.CorrectVarName(_name As String) As String
+	Dim i As Long
+	i = GetVarIndex(_name)
+	Return GetVarName(i)
 End Function
 Function VarDict.IsVar(_name As String) As Long
 	Return (GetVarIndex(_name) <> -1)
@@ -142,7 +166,7 @@ End Sub
 Function UseVar(s As String) As String
 	Dim result As String = s
 
-	If IsVar(s) Then  Return result
+	If IsVar(s) Then  Return vars.CorrectVarName(s)
 
 	AddIntVar(s)
 

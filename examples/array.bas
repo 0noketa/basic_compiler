@@ -1,7 +1,7 @@
-EXTERN PRINTI
-GLOBAL I
-GLOBAL ENTRY
-DIM A(0 TO 64)
+Declare Sub PRINTI cdecl ()
+Global I
+Global ENTRY
+Dim A(0 To 64)
 
 
 FIB:
@@ -10,29 +10,29 @@ FIB:
 	I = 1
 	J = 0
 FIB0:
-	A(LBOUND(A) + N) = I
+	A(LBound(A) + N) = I
 	K = I
 	I = I + J
 	J = K
 
-	IF N < M N = N + 1: GOTO FIB0
-	RETURN
+	If N < M  N = N + 1: Goto FIB0
+	Return
 
 DUMP:
 	M = N
 	N = 0
 DUMP0:
-	I = A(LBOUND(A) + N)
-	GOSUB PRINTI
+	I = A(LBound(A) + N)
+	Gosub PRINTI
 
-	IF N < M N = N + 1: GOTO DUMP0
-	RETURN
+	If N < M  N = N + 1: Goto DUMP0
+	Return
 
 
 ENTRY:
 	N = 10
-	GOSUB FIB
+	Gosub FIB
 
 	N = 10
-	GOSUB DUMP
-	RETURN
+	Gosub DUMP
+	Return
