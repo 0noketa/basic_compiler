@@ -6,31 +6,31 @@
 #include once "file.bi"
 
 
-Function IsNam(s$ As String) As Long
+Function IsNam(c As Long) As Long
 	Return _
-		( (Asc("A")<=Asc(s$)) And (Asc(s$)<=Asc("Z")) ) Or _
-		( (Asc("a")<=Asc(s$)) And (Asc(s$)<=Asc("z")) )
+		( (Asc("A")<=c) And (c<=Asc("Z")) ) Or _
+		( (Asc("a")<=c) And (c<=Asc("z")) )
 End Function
 
-Function IsNum(s$ As String) As Long
+Function IsNum(c As Long) As Long
 	Return _
-		(Asc("0")<=Asc(s$)) And (Asc(s$)<=Asc("9"))
+		(Asc("0")<=c) And (c<=Asc("9"))
 End Function
 
-Function IsNamOrNum(s$ As String) As Long
-	Return IsNam(s$) Or IsNum(s$)
+Function IsNamOrNum(c As Long) As Long
+	Return IsNam(c) Or IsNum(c)
 End Function
 
-Function IsNotAny(s$ As String) As Long
+Function IsNotAny(c As Long) As Long
 	Return FALSE
 End Function
 
-Function IsQrt(s$ As String) As Long
-	Return (Asc(s$) = 34)
+Function IsQrt(c As Long) As Long
+	Return (c = 34)
 End Function
 
-Function IsNotQrt(s$ As String) As Long
-	Return (Asc(s$) <> 34)
+Function IsNotQrt(c As Long) As Long
+	Return (c <> 34)
 End Function
 
 Type SrcFile
@@ -104,54 +104,54 @@ Sub SrcFile.NextLine()
 
 	TrimLeft(current_line)
 	qt_pos= InStr(1, current_line, Chr(34))
-	If qt_pos=0 Then
-		qt_pos= Len(current_line)
-	End If
+	If qt_pos=0 Then  qt_pos= Len(current_line)
 End Sub
 
 Function SrcFile.ReadToken() As String
 	Dim i As Long
 	Dim l As Long
-	Dim f As Function(param_s As String) As Long
+	Dim f As Function(param_c As Long) As Long
 	Dim sizeOfLastNoise As Long
-	Dim c As String
+	Dim c As Long
 	Dim result As String
 	TrimLeft(current_line)
 
 	If (AtEof()) Or (AtEol()) Then
 		result = ""
-	Else
-		l= Len(current_line)
-		c= Mid$(current_line, 1,1)
-		sizeOfLastNoise= 0
-		If IsNam(c) Then
-			f= ProcPtr(IsNamOrNum)
-		ElseIf IsNum(c) Then
-			f= ProcPtr(IsNum)
-		ElseIf IsQrt(c) Then
-			f= ProcPtr(IsNotQrt)
-			sizeOfLastNoise= 1
-		Else
-			f= ProcPtr(IsNotAny)
-		End If
-
-		i= 1
-		c= Mid$(current_line, i,1)
-		Do
-			i += 1
-			If l<i Then
-				sizeOfLastNoise= 0
-				Exit Do
-			End If
-			c= Mid$(current_line, i,1)
-		Loop While f(c)
-		i += sizeOfLastNoise
-
-		result =Left$(current_line, i -1)
-		current_line= Right$(current_line, l -(i -1))
+		current_token = result
+		Return result
 	End If
 
-	current_token= result
+	l= Len(current_line)
+	c= Asc(Mid$(current_line, 1,1))
+	sizeOfLastNoise= 0
+	If IsNam(c) Then
+		f = ProcPtr(IsNamOrNum)
+	ElseIf IsNum(c) Then
+		f = ProcPtr(IsNum)
+	ElseIf IsQrt(c) Then
+		f = ProcPtr(IsNotQrt)
+		sizeOfLastNoise= 1
+	Else
+		f = ProcPtr(IsNotAny)
+	End If
+
+	i= 1
+	c= Asc(Mid$(current_line, 1,1))
+	Do
+		i += 1
+		If l<i Then
+			sizeOfLastNoise= 0
+			Exit Do
+		End If
+		c = Asc(Mid$(current_line, i,1))
+	Loop While f(c)
+
+	i += sizeOfLastNoise
+
+	result = Left$(current_line, i - 1)
+	current_line = Right$(current_line, l - (i - 1))
+	current_token = result
 
 	Return result
 End Function

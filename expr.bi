@@ -40,7 +40,7 @@ End Type
 
 Constructor Expr()
 	self = NULL
-	' ctx= NULL
+	' ctx = NULL
 	argv = Allocate(SizeOf(Expr Ptr))
 	argc = 0
 	opr = ""
@@ -50,9 +50,9 @@ End Constructor
 
 Destructor Expr()
 	Dim i As Long
-	If argv<>NULL Then
-		If 0<argc Then
-			For i= 0 To argc-1
+	If argv <> NULL Then
+		If 0 < argc Then
+			For i = 0 To argc-1
 				delete *(argv + i)
 			Next
 		End If
@@ -64,7 +64,7 @@ End Destructor
 Function Expr.MakeExpr() As Expr Ptr
 	Dim e As Expr Ptr
 	e = New Expr()
-	' e->ctx= ctx
+	' e->ctx = ctx
 	Return e
 End Function
 
@@ -73,13 +73,13 @@ Function Expr.Clone() As Expr Ptr
 	Dim arg As Expr Ptr
 	Dim i As Long
 
-	e= New Expr()
-	e->opr= opr
-	' e->ctx= ctx
-	e->_val= _val
-	e->self= self
-	For i= 0 To argc-1
-		arg= (*(argv + i))->Clone()
+	e = New Expr()
+	e->opr = opr
+	' e->ctx = ctx
+	e->_val = _val
+	e->self = self
+	For i = 0 To argc-1
+		arg = (*(argv + i))->Clone()
 		e->AddArg(arg)
 	Next
 
@@ -109,7 +109,7 @@ End Function
 Function Expr.AddArg(e As Expr Ptr) As Expr Ptr
 	argc+= 1
 	argv= realloc(argv, SizeOf(Expr Ptr)*argc)
-	*(argv+(argc-1))= e
+	*(argv+(argc-1)) = e
 	return self
 End Function
 

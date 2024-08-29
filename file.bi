@@ -87,9 +87,7 @@ End Function
 
 
 Sub OFile.WriteLn( s As String )
-	If (mode <> "w") Or (hdl = NULL) Then
-		Exit Sub
-	End If
+	If (mode <> "w") Or (hdl = NULL) Then  Exit Sub
 
 	s = s + newline
 	fputs(StrPtr(s), hdl)

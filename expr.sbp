@@ -2,13 +2,13 @@
 #ifndef expr__sbp
 #define expr__sbp
 
-Class Ctx
-End Class
+' Class Ctx
+' End Class
 
 Class Expr
 	Protected
 		self As *Expr
-		ctx As *Ctx
+		' ctx As *Ctx
 		argv As **Expr
 		argc As Long
 		opr As String
@@ -17,8 +17,8 @@ Class Expr
 
 	Public
 		Sub Expr()
-			self= NULL
-			ctx = NULL
+			self = NULL
+			' ctx = NULL
 			argv = malloc(SizeOf(*Expr))
 			argc = 0
 			opr = ""
@@ -28,9 +28,9 @@ Class Expr
 
 		Sub ~Expr()
 			Dim i As Long
-			If argv<>NULL Then
-				If 0<argc Then
-					For i= 0 To argc-1
+			If argv <> NULL Then
+				If 0 < argc Then
+					For i = 0 To argc-1
 						delete argv[i]
 					Next
 				End If
@@ -41,8 +41,8 @@ Class Expr
 
 		Function MakeExpr() As *Expr
 			Dim e As *Expr
-			e= New Expr()
-			e->ctx= ctx
+			e = New Expr()
+			' e->ctx = ctx
 		End Function
 
 		Function Clone() As *Expr
@@ -50,13 +50,13 @@ Class Expr
 			Dim arg As *Expr
 			Dim i As Long
 
-			e= New Expr()
-			e->opr= opr
-			e->ctx= ctx
-			e->_val= _val
-			e->self= self
-			For i= 0 To argc-1
-				arg= argv[i]->Clone()
+			e = New Expr()
+			e->opr = opr
+			' e->ctx = ctx
+			e->_val = _val
+			e->self = self
+			For i = 0 To argc-1
+				arg = argv[i]->Clone()
 				e->AddArg(arg)
 			Next
 		End Function
@@ -72,7 +72,7 @@ Class Expr
 		End Function
 
 		Function SetVal(s As String) As *Expr
-			_val= s
+			_val = s
 			SetVal = self
 		End Function
 
@@ -83,29 +83,29 @@ Class Expr
 
 		Function AddArg(e As *Expr) As *Expr
 			argc+= 1
-			argv= realloc(argv, SizeOf(*Expr)*argc)
-			argv[argc-1]= e
-			addArg = self
+			argv = realloc(argv, SizeOf(*Expr)*argc)
+			argv[argc-1] = e
+			AddArg = self
 		End Function
 
 		Function GetSelf() As *Expr
-			GetSelf= self
+			GetSelf = self
 		End Function
 
 		Function GetOpr() As String
-			GetOpr= opr
+			GetOpr = opr
 		End Function
 
 		Function GetVal() As String
-			GetVal= _val
+			GetVal = _val
 		End Function
 
 		Function GetType() As String
-			GetType= _type
+			GetType = _type
 		End Function
 
 		Function GetArgc() As Long
-			GetArgc= argc
+			GetArgc = argc
 		End Function
 
 		Function GetArgv(i As Long) As *Expr
@@ -117,9 +117,9 @@ Class Expr
 		End Function
 
 		Function OprIs(s As String) As Long
-			OprIs= (opr=s)
+			OprIs = (opr=s)
 		End Function
-
+End Class
 
 
 

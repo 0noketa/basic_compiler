@@ -5,31 +5,31 @@
 #include "libc.sbp"
 #include "file.sbp"
 
-Function IsNam(s$ As String) As Long
+Function IsNam(c As Long) As Long
 	IsNam= _
-		( (Asc("A")<=Asc(s$)) And (Asc(s$)<=Asc("Z")) ) Or _
-		( (Asc("a")<=Asc(s$)) And (Asc(s$)<=Asc("z")) )
+		( (Asc("A")<=c) And (c<=Asc("Z")) ) Or _
+		( (Asc("a")<=c) And (c<=Asc("z")) )
 End Function
 
-Function IsNum(s$ As String) As Long
+Function IsNum(c As Long) As Long
 	IsNum= _
-		(Asc("0")<=Asc(s$)) And (Asc(s$)<=Asc("9"))
+		(Asc("0")<=c) And (c<=Asc("9"))
 End Function
 
-Function IsNamOrNum(s$ As String) As Long
-	IsNamOrNum= IsNam(s$) Or IsNum(s$)
+Function IsNamOrNum(c As Long) As Long
+	IsNamOrNum= IsNam(c) Or IsNum(c)
 End Function
 
-Function IsNotAny(s$ As String) As Long
+Function IsNotAny(c As Long) As Long
 	IsNotAny= FALSE
 End Function
 
-Function IsQrt(s$ As String) As Long
-	IsQrt= (s$ = Ex"\q")
+Function IsQrt(c As Long) As Long
+	IsQrt= (c = Asc(Ex"\q"))
 End Function
 
-Function IsNotQrt(s$ As String) As Long
-	IsNotQrt= (s$ <> Ex"\q")
+Function IsNotQrt(c As Long) As Long
+	IsNotQrt= (c <> Asc(Ex"\q"))
 End Function
 
 Class SrcFile: Inherits OFile
@@ -54,52 +54,103 @@ Class SrcFile: Inherits OFile
 
 			TrimLeft(current_line)
 			qt_pos= InStr(1, current_line, Ex"\q")
-			If qt_pos=0 Then _
-				qt_pos= Len(current_line)
+			If qt_pos=0 Then  qt_pos= Len(current_line)
 		End Sub
 
 		Function ReadToken() As String
 			Dim i As Long
 			Dim l As Long
-			Dim f As *Function(param_s As String) As Long
+			' Dim f As *Function(param_c As Long) As Long
 			Dim sizeOfLastNoise As Long
-			Dim c As String
+			Dim c As Long
 			TrimLeft(current_line)
 
 			If (AtEof()) Or (AtEol()) Then
-				ReadToken= ""
-			Else
-				l= Len(current_line)
-				c= Mid$(current_line, 1,1)
-				sizeOfLastNoise= 0
-				If IsNam(c) Then
-					f= AddressOf(IsNamOrNum)
-				ElseIf IsNum(c) Then
-					f= AddressOf(IsNum)
-				ElseIf IsQrt(c) Then
-					f= AddressOf(IsNotQrt)
-					sizeOfLastNoise= 1
-				Else
-					f= AddressOf(IsNotAny)
-				End If
+				ReadToken = ""
+				current_token = ReadToken
+				Exit Function
+			End If
 
+			l= Len(current_line)
+			c= Asc(Mid$(current_line, 1,1))
+			sizeOfLastNoise= 0
+
+			' inline
+			If IsNam(c) Then
 				i= 1
-				c= Mid$(current_line, i,1)
+				c= Asc(Mid$(current_line, 1,1))
 				Do
-					i+= 1
+					i += 1
 					If l<i Then
 						sizeOfLastNoise= 0
 						Exit Do
 					End If
-					c= Mid$(current_line, i,1)
-				Loop While f(c)
-				i+= sizeOfLastNoise
-
-				ReadToken= Left$(current_line, i-1)
-				current_line= Right$(current_line, l-(i-1))
+					c = Asc(Mid$(current_line, i,1))
+				Loop While IsNamOrNum(c)
+			ElseIf IsNum(c) Then
+				i= 1
+				c= Asc(Mid$(current_line, 1,1))
+				Do
+					i += 1
+					If l<i Then
+						sizeOfLastNoise= 0
+						Exit Do
+					End If
+					c = Asc(Mid$(current_line, i,1))
+				Loop While IsNum(c)
+			ElseIf IsQrt(c) Then
+				sizeOfLastNoise= 1
+				i= 1
+				c= Asc(Mid$(current_line, 1,1))
+				Do
+					i += 1
+					If l<i Then
+						sizeOfLastNoise= 0
+						Exit Do
+					End If
+					c = Asc(Mid$(current_line, i,1))
+				Loop While IsNotQrt(c)
+			Else
+				i= 1
+				c= Asc(Mid$(current_line, 1,1))
+				Do
+					i += 1
+					If l<i Then
+						sizeOfLastNoise= 0
+						Exit Do
+					End If
+					c = Asc(Mid$(current_line, i,1))
+				Loop While IsNotAny(c)
 			End If
 
-			current_token= ReadToken
+			' // func ptr seems broken
+			' If IsNam(c) Then
+			' 	f = AddressOf(IsNamOrNum)
+			' ElseIf IsNum(c) Then
+			' 	f = AddressOf(IsNum)
+			' ElseIf IsQrt(c) Then
+			' 	f = AddressOf(IsNotQrt)
+			' 	sizeOfLastNoise= 1
+			' Else
+			' 	f = AddressOf(IsNotAny)
+			' End If
+
+			' i= 1
+			' c= Asc(Mid$(current_line, 1,1))
+			' Do
+			' 	i += 1
+			' 	If l<i Then
+			' 		sizeOfLastNoise= 0
+			' 		Exit Do
+			' 	End If
+			' 	c = Asc(Mid$(current_line, i,1))
+			' Loop While f(c)
+
+			i += sizeOfLastNoise
+
+			ReadToken = Left$(current_line, i - 1)
+			current_line = Right$(current_line, l - (i - 1))
+			current_token = ReadToken
 		End Function
 
 		Sub UnReadToken()

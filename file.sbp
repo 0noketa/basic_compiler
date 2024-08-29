@@ -38,13 +38,12 @@ Class OFile
 		End Function
 
 		Function ReadLn() As String
-			Dim buf[255] As Byte
+			Dim buf[256] As Byte
 			Dim p As BytePtr
 			Dim q As BytePtr
 
 			ReadLn= ""
-			If (mode<>"r") Or (hdl=NULL) Then _
-				Exit Function
+			If (mode <> "r") Or (hdl = NULL) Then   Exit Function
 
 			p= VarPtr(buf[0])
 
@@ -53,7 +52,7 @@ Class OFile
 				q= C_strchr(p, 10)
 				If q<>NULL Then
 					q[0]= 0
-					ReadLn= ReadLn + MakeStr(p)
+					ReadLn = ReadLn + MakeStr(p)
 					Exit While
 				Else
 					ReadLn= ReadLn + MakeStr(p)
@@ -63,8 +62,7 @@ Class OFile
 
 
 		Sub WriteLn( s As String )
-			If (mode<>"w") Or (hdl=NULL) Then _
-				Exit Sub
+			If (mode<>"w") Or (hdl=NULL) Then  Exit Sub
 
 			s= s + newline
 			C_fputs(StrPtr(s), hdl)

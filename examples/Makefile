@@ -18,3 +18,9 @@ array: array.o
 array.o:
 	$(BC) -int 32 array.bas > array.asm
 	nasm -fwin32 --prefix _ -o array.o array.asm
+
+extern_func: extern_func.o
+	$(CC) -o extern_func.exe  extern_func_sub.c  extern_func.o
+extern_func.o:
+	$(BC) -int 32 extern_func.bas > extern_func.asm
+	nasm -fwin32 --prefix _ -o extern_func.o extern_func.asm

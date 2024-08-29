@@ -35,6 +35,7 @@ Type BasicCompiler
 		Declare Sub printCondJump(e As Expr Ptr, cond As Long, label As String)
 		Declare Sub printExpr(e As Expr Ptr)
 		Declare Sub printCondJmp(e As Expr Ptr, label As String)
+		Declare Function tryCompileDecl() As Long
 		Declare Sub compile()
 
 		' from BasicSrc
@@ -60,7 +61,7 @@ Sub BasicCompiler.disableLineNumbers()
 End Sub
 
 Sub BasicCompiler.setIntSize(n As Long)
-	if n <> 16 And n <> 32 And n <> 64 Then  Return
+	if n <> 16 And n <> 32 And n <> 64 Then  Exit Sub
 
 	int_size = n
 End Sub
@@ -107,13 +108,13 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 	Dim s As String
 
 	If e->GetOpr() = "apply" Then
-		If e->GetArgc() = 0 Then
-			print "* error *"
-			Return
-		End If
-
 		s = e->GetVal()
 		If UpperStr(s) = "LEN" Then
+			If e->GetArgc() = 0 Then
+				print "* error *"
+				Exit Sub
+			End If
+
 			e2 = e->GetArgv(0)
 			s = e2->GetVal()
 			If vars.IsArray(s) Then
@@ -122,6 +123,11 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 				print "push 1"
 			End If
 		ELseIf UpperStr(s) = "LBOUND" Then
+				If e->GetArgc() = 0 Then
+				print "* error *"
+				Exit Sub
+			End If
+
 			e2 = e->GetArgv(0)
 			s = e2->GetVal()
 			If vars.IsArray(s) Then
@@ -130,6 +136,11 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 				print "push 0"
 			End If
 		ELseIf UpperStr(s) = "UBOUND" Then
+			If e->GetArgc() = 0 Then
+					print "* error *"
+					Exit Sub
+			End If
+
 			e2 = e->GetArgv(0)
 			s = e2->GetVal()
 			If vars.IsArray(s) Then
@@ -137,7 +148,32 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			Else
 				print "push 0"
 			End If
+		ELseIf vars.IsProc(s) Then
+			If e->GetArgc() > 0 Then
+				If vars.GetParamType(s) = "" Then
+					print "; no param function was called with args"
+					Exit Sub
+				End If
+
+				printExpr(e->GetArgv(0))
+			End If
+
+			print "call " + vars.CorrectVarName(s)
+			If e->GetArgc() > 0 Then
+				print "pop " + registerName("d")
+			End If
+
+			If vars.GetResultType(s) = "" Then
+				print "; void was returned. check is it not inside expr?" 
+			Else
+				print "push " + registerName("a")
+			End If
 		ElseIf vars.IsArray(s) Then
+			If e->GetArgc() = 0 Then
+					print "* error *"
+					Exit Sub
+			End If
+
 			printExpr(e->GetArgv(0))
 			_lbound = vars.GetArrayLBound(s)
 
@@ -160,12 +196,11 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 	Else
 		If e->GetArgc() <> 0 Then
 			print "* error *"
-			Return
+			Exit Sub
 		End If
 
 		s = e->GetVal()
-		If e->GetType() = "Integer" Then  print ";int"
-		If IsNum(Mid$(s, 1,1)) Then
+		If IsNum(Asc(Mid$(s, 1,1))) Then
 			print "push " + wordName() + " " + s
 		Else
 			print "push " + wordName() + "[" + vars.CorrectVarName(s) + "]"
@@ -275,6 +310,106 @@ End Sub
 Sub BasicCompiler.printCondJmp(e As Expr Ptr, label As String)
 End Sub
 
+Function BasicCompiler.tryCompileDecl() As Long
+	Dim procType As String
+	Dim paramType As String
+	Dim resultType As String
+	Dim s As String
+	Dim _name As String
+
+	s = ReadToken()
+	If UpperStr(s) = "SUB" Then
+		procType = "SUB"
+		paramType = ""
+		resultType = ""
+	ElseIf UpperStr(s) = "FUNCTION" Then
+		procType = "FUNCTION"
+		paramType = ""
+		resultType = "Integer"
+	Else
+		Print "; declaration of unknown element " + s
+		Return (0<>0)
+	End If
+
+	_name = ReadToken()
+	print "extern " + _name
+
+	s = ReadToken()
+	If UpperStr(s) = "CDECL" Then
+		s = ReadToken()
+	End If
+
+	If s = "(" Then
+		s = ReadToken()
+		If s <> ")" Then
+			paramType = "Integer"
+
+			If UpperStr(s) = "BYVAL" Then
+				s = ReadToken()
+			ElseIf UpperStr(s) = "BYREF" Then
+				Print "; decl of procedure with ByRef params are not implemented"
+				Return (0<>0)
+			End If
+
+			s = ReadToken()
+			If UpperStr(s) = "AS" Then
+				s = ReadToken()
+				If UpperStr(s) <> "INTEGER" And UpperStr(s) <> "LONG" Then
+					Print "; decl of procedure with non integer/log params are not implemented"
+					Return (0<>0)
+				End If
+
+				paramType = "Integer"
+
+				s = ReadToken()
+				If s = "," Then
+					Print "; decl of procedure with >=2 params are not implemented"
+					Return (0<>0)
+				End If
+			End If
+		End If
+
+		If s <> ")" Then
+			Print "; decl with unknown element " + s
+			Return (0<>0)
+		End If
+
+		s = ReadToken()
+		If UpperStr(s) <> "AS" Then
+			UnReadToken()
+		Else
+			s = ReadToken()
+			If UpperStr(s) <> "INTEGER" And UpperStr(s) <> "LONG" Then
+				Print "; decl of procedure with non integer/log params are not implemented"
+				Return (0<>0)
+			End If
+
+			resultType = "Integer"
+			If procType = "SUB" Then
+				Print "; decl of SUB procedure with result type description will be treated as FUNCTION"
+			End If
+		End If
+	Else
+		UnReadToken()
+	End If
+
+	If resultType = "" Then
+		If paramType = "" Then
+			vars.AddExternVoidProc(_name)
+		Else
+			vars.AddExternIntProc(_name)
+		End If
+	Else
+		If paramType = "" Then
+			vars.AddExternNullaryIntFunc(_name)
+		Else
+			vars.AddExternIntFunc(_name)
+		End If
+	End If
+
+	Return (0=0)
+End Function
+
 Sub BasicCompiler.compile()
 	Dim e As Expr Ptr
 	Dim i As Long
@@ -283,6 +418,7 @@ Sub BasicCompiler.compile()
 	Dim line_number As Long
 	Dim new_line_number As Long
 	Dim line_label_is_requird As Long
+	Dim prefix As String
 	Dim s As String
 	Dim s2 As String
 
@@ -301,11 +437,11 @@ Sub BasicCompiler.compile()
 		End If
 
 		s = ReadToken()
-		If IsNum(Mid$(s, 1,1)) Then
+		If IsNum(Asc(Mid$(s, 1,1))) Then
 			new_line_number = Int(Val(s))
 			If new_line_number < line_number Then
 				print "; error: line numbers can not be reused"
-				Return
+				Exit Sub
 			End If
 			line_number = new_line_number
 
@@ -323,11 +459,10 @@ Sub BasicCompiler.compile()
 		End If
 
 		' QB/VB label
-		If IsNam(Mid$(s, 1,1)) Then
+		If IsNam(Asc(Mid$(s, 1,1))) Then
 			If ReadToken() = ":" Then
 				print s + ":"
 				s = ReadToken()
-				print "; next: " + s 
 			Else
 				UnReadToken()
 			End If
@@ -347,29 +482,7 @@ Sub BasicCompiler.compile()
 				print "extern " + s
 				AddExternIntVar(s)
 			ElseIf UpperStr(s) = "DECLARE" Then
-				s = ReadToken()
-				If UpperStr(s) <> "SUB" Then
-					Print "; declaration of unknown element " + s
-					Return
-				Else
-					s = ReadToken()
-					print "extern " + s
-					AddExternIntVar(s)
-
-					s = ReadToken()
-					If UpperStr(s) = "CDECL" Then
-						s = ReadToken()
-					End If
-
-					If s = "(" Then
-						If ReadToken() <> ")" Then
-							Print "; decl of procedure with params are not implemented"
-							Return
-						End If
-					Else
-						UnReadToken()
-					End If
-				End If
+				If Not tryCompileDecl() Then Exit Sub
 			ElseIf UpperStr(s) = "DIM" Then
 				s = ReadToken()
 				If ReadToken() = "(" Then
@@ -393,11 +506,11 @@ Sub BasicCompiler.compile()
 					s = ReadToken()
 				End If
 
-				If IsNum(Mid$(s, 1,1)) Then
+				If IsNum(Asc(Mid$(s, 1,1))) Then
 					s = "BC_LINE_" + s
 					If lines_are_disabled = 1 Then
 						print "; line labels are disabled"
-						Return
+						Exit Sub
 					End If
 				End If
 				print "jmp " + s
@@ -408,76 +521,109 @@ Sub BasicCompiler.compile()
 					s = ReadToken()
 				End If
 
-				If IsNum(Mid$(s,1,1)) Then
+				If IsNum(Asc(Mid$(s,1,1))) Then
 					printCondJump(e,TRUE,"BC_LINE_" + s)
 
 					If lines_are_disabled = 1 Then
 						print "; line labels are disabled"
-						Return
+						Exit Sub
 					End If
 				Else
 					printCondJump(e,FALSE,"BC_LINE_" + Str$(line_number) + "_END")
 					line_label_is_requird = 1
-				'	UnReadToken()
+					' s is first tkn inside THEN
 					Continue Do
 				End If
-			ElseIf UpperStr(s) = "GOSUB" Or UpperStr(s) = "CALL" Then
-				s = ReadToken()
-				If s = "*" Then
-					s = ReadToken()
-				End If
-
-				If IsNum(Mid$(s, 1,1)) Then
-					s = "BC_LINE_" + s
-
-					If lines_are_disabled = 1 Then
-						print "; line labels are disabled"
-						Return
-					End If
-				End If
-				print "call " + s
 			ElseIf UpperStr(s) = "RETURN" Then
 				print "ret"
 			ElseIf (s <> "") And (s <> ":") Then
+				prefix = ""
 				If UpperStr(s) = "LET" Then
+					prefix = "LET"
+					s = ReadToken()
+				ElseIf UpperStr(s) = "CALL" Or UpperStr(s) = "GOSUB" Then
+					prefix = "CALL"
 					s = ReadToken()
 				End If
 
-				s2 = ReadToken()
-				If s2 = "(" Then
-					print ";array_element_store"
-					_lbound = vars.GetArrayLBound(s)
-					UnReadToken()
-					e = _src.compileVal()
-					printExpr(e)
-					If ReadToken() = "=" Then
-						If int_size = 16 Then
-							e = _src.compileExpr()
-							printExpr(e)
-							print "pop " + registerName("a")
-							print "pop " + registerName("b")
-							If _lbound <> 0 Then
-								print "sub " + registerName("b") + ", " + Str(_lbound)
+				If prefix = "CALL" Then
+					If s = "*" Then  s = ReadToken()
+
+					If ReadToken() <> "(" Then
+						UnReadToken()
+					ElseIf vars.IsProc(s) Then
+						If vars.GetParamType(s) = "" Then
+							If ReadToken() <> ")" Then
+								print "; nullary or label was called with args: " + s
+								Exit Sub
 							End If
-							print "shl " + registerName("b") + ", " + Str(int_size / 8)
-							print "add " + registerName("b") + ", " + vars.CorrectVarName(s)
-							print "mov [" + registerName("b") + "], " + registerName("a")
 						Else
-							e = _src.compileExpr()
-							printExpr(e)
-							print "pop " + registerName("d")
-							print "pop " + registerName("a")
-							If _lbound <> 0 Then
-								print "sub " + registerName("a") + ", " + Str(_lbound)
+							If ReadToken() = ")" Then
+								print "; non nullary was called without args: " + s
+								Exit Sub
+							Else
+								UnReadToken()
 							End If
-							print "mov [" + vars.CorrectVarName(s) + "+" + registerName("a") + "*" + Str(int_size / 8) + "], " + registerName("d")
+
+							e = _src.compileVal()
+							printExpr(e)
+							ReadToken()
 						End If
 					End If
-				ElseIf s2 = "=" Then
-					print ";var_store"
-					e = _src.compileExpr()
-					printExpr(e)
-					print "pop " + wordName() + "[" + UseVar(s) + "]"
+
+					If IsNum(Asc(Mid$(s, 1,1))) Then
+						s = "BC_LINE_" + s
+
+						If lines_are_disabled = 1 Then
+							print "; line labels are disabled"
+							Exit Sub
+						End If
+					End If
+
+					If vars.IsProc(s) Then
+						print "call " + vars.CorrectVarName(s)
+
+						If vars.GetParamType(s) <> "" Then
+							print "pop " + registerName("d")
+						End If
+					Else
+						print "call " + s
+					End If
+				Else
+					s2 = ReadToken()
+					If s2 = "(" Then
+						_lbound = vars.GetArrayLBound(s)
+						UnReadToken()
+						e = _src.compileVal()
+						printExpr(e)
+						If ReadToken() = "=" Then
+							If int_size = 16 Then
+								e = _src.compileExpr()
+								printExpr(e)
+								print "pop " + registerName("a")
+								print "pop " + registerName("b")
+								If _lbound <> 0 Then
+									print "sub " + registerName("b") + ", " + Str(_lbound)
+								End If
+								print "shl " + registerName("b") + ", " + Str(int_size / 8)
+								print "add " + registerName("b") + ", " + vars.CorrectVarName(s)
+								print "mov [" + registerName("b") + "], " + registerName("a")
+							Else
+								e = _src.compileExpr()
+								printExpr(e)
+								print "pop " + registerName("d")
+								print "pop " + registerName("a")
+								If _lbound <> 0 Then
+									print "sub " + registerName("a") + ", " + Str(_lbound)
+								End If
+								print "mov [" + vars.CorrectVarName(s) + "+" + registerName("a") + "*" + Str(int_size / 8) + "], " + registerName("d")
+							End If
+						End If
+					ElseIf s2 = "=" Then
+						e = _src.compileExpr()
+						printExpr(e)
+						print "pop " + wordName() + "[" + UseVar(s) + "]"
+					End If
 				End If
 			End If
 
@@ -546,8 +692,7 @@ Dim Shared use_thread_local As Long = 0
 
 
 Sub compile(s As String)
-	Dim fIn As BasicCompiler
-	fIn.Init(s)
+	Dim fIn As BasicCompiler : fIn.Init(s)
 	If no_line = 1 Then fIn.disableLineNumbers()
 	fIn.setIntSize(int_size)
 	fIn.enableThreadLocalStorage(use_thread_local)

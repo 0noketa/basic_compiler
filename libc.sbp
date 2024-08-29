@@ -24,5 +24,8 @@ Declare Function C_strchr cdecl  Lib "msvcrt.dll" _
 	Alias "strchr" _
 	(s As BytePtr, c As Long) As BytePtr
 
+Declare Function C_toupper cdecl  Lib "msvcrt.dll" _
+	Alias "toupper" _
+	(c As Long) As Long
 
 #endif
