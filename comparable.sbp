@@ -1,0 +1,95 @@
+#ifndef comparable__sbp
+#define comparable__sbp
+
+' function pointers require >=4.24
+
+
+Class IComparable
+	Protected
+		pCompareTo As *Function(p1 As VoidPtr, p2 As VoidPtr) As Long
+	Public
+		Function CompareTo(o As *IComparable) As Long
+			CompareTo = pCompareTo(VarPtr(this), o)
+		End Function
+End Class
+
+
+Class BoxedInteger : Inherits IComparable
+	Protected
+		_value As Long
+	Public
+		' Constructor params are broken?
+		Sub BoxedInteger()
+			_value = 0
+			pCompareTo = AddressOf(BoxedInteger_Compare)
+		End Sub
+		Sub Init(i As Long)
+			_value = i
+		End Sub
+		Function Value() As Long
+			Value = _value
+		End Function
+End Class
+
+Function BoxedInteger_Compare(p1 As VoidPtr, p2 As VoidPtr) As Long
+	Dim o1 As *BoxedInteger : o1 = p1
+	Dim o2 As *BoxedInteger : o2 = p2
+
+	If o1->Value() < o2->Value() Then
+		BoxedInteger_Compare = 1
+	ElseIf o1->Value() > o2->Value() Then
+		BoxedInteger_Compare = -1
+	Else
+		BoxedInteger_Compare = 0
+	End If
+End Function
+
+Function NewBoxedInteger(i As Long) As *BoxedInteger
+	NewBoxedInteger = New BoxedInteger
+	NewBoxedInteger->Init(i)
+End Function
+
+
+
+
+Class BoxedString : Inherits IComparable
+	Protected
+		_value As String
+	Public
+		Sub BoxedString()
+			_value = ""
+			pCompareTo = AddressOf(BoxedString_Compare)
+		End Sub
+		Sub Init(s As String)
+			_value = s
+		End Sub
+		Function Value() As String
+			Value = _value
+		End Function
+		Function Count() As Long
+			Count = Len(_value)
+		End Function
+		Function ChrAt(i As String) As String
+			ChrAt = Mid$(_value, i, 1)
+		End Function
+End Class
+
+Declare Function strcmp cdecl Lib "msvcrt.dll" (p As BytePtr, q As BytePtr) As Long
+
+Function BoxedString_Compare(p1 As VoidPtr, p2 As VoidPtr) As Long
+	Dim o1 As *BoxedString : o1 = p1
+	Dim o2 As *BoxedString : o2 = p2
+	Dim s1 As String : s1 = o1->Value()
+	Dim s2 As String : s2 = o2->Value()
+
+	BoxedString_Compare = strcmp(StrPtr(s1), StrPtr(s2))
+End Function
+
+Function NewBoxedString(s As String) As *BoxedString
+	NewBoxedString = New BoxedString
+	NewBoxedString->Init(s)
+End Function
+
+
+
+#endif

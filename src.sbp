@@ -5,6 +5,7 @@
 
 #include "lex.sbp"
 #include "expr.sbp"
+#include "statement.sbp"
 
 
 Const max_vars_count = 256
@@ -392,7 +393,7 @@ Class BasicSrc
 				e= New Expr()
 				e->SetOpr("val")
 				e->SetVal(s)
-			ElseIf IsNam(Asc(Mid$(s, 1,1))) Then
+			ElseIf IsNamHead(Asc(Mid$(s, 1,1))) Then
 				s2 = ReadToken()
 				If s2 = "(" Then
 					e= New Expr()
@@ -529,6 +530,501 @@ Class BasicSrc
 			InferExprType = result
 		End Function
 
+		Function tryCompileDecl() As Long
+			Dim procType As String
+			Dim paramType As String
+			Dim resultType As String
+			Dim s As String
+			Dim _name As String
+
+			s = ReadToken()
+			If UpperStr(s) = "SUB" Then
+				procType = "SUB"
+				paramType = ""
+				resultType = ""
+			ElseIf UpperStr(s) = "FUNCTION" Then
+				procType = "FUNCTION"
+				paramType = ""
+				resultType = "Integer"
+			Else
+				Print "; declaration of unknown element " + s
+				tryCompileDecl = (0<>0)
+				Exit Function
+			End If
+
+			_name = ReadToken()
+			print "extern " + _name
+
+			s = ReadToken()
+			If UpperStr(s) = "CDECL" Then
+				s = ReadToken()
+			End If
+
+			If s = "(" Then
+				s = ReadToken()
+				If s <> ")" Then
+					paramType = "Integer"
+
+					If UpperStr(s) = "BYVAL" Then
+						s = ReadToken()
+					ElseIf UpperStr(s) = "BYREF" Then
+						Print "; decl of procedure with ByRef params are not implemented"
+						tryCompileDecl = (0<>0)
+						Exit Function
+					End If
+
+					s = ReadToken()
+					If UpperStr(s) = "AS" Then
+						s = ReadToken()
+						If UpperStr(s) <> "INTEGER" And UpperStr(s) <> "LONG" Then
+							Print "; decl of procedure with non integer/log params are not implemented"
+							tryCompileDecl = (0<>0)
+							Exit Function
+						End If
+
+						paramType = "Integer"
+
+						s = ReadToken()
+						If s = "," Then
+							Print "; decl of procedure with >=2 params are not implemented"
+							tryCompileDecl = (0<>0)
+							Exit Function
+						End If
+					End If
+				End If
+
+				If s <> ")" Then
+					Print "; decl with unknown element " + s
+					tryCompileDecl = (0<>0)
+					Exit Function
+				End If
+
+				s = ReadToken()
+				If UpperStr(s) <> "AS" Then
+					UnReadToken()
+				Else
+					s = ReadToken()
+					If UpperStr(s) <> "INTEGER" And UpperStr(s) <> "LONG" Then
+						Print "; decl of procedure with non integer/log params are not implemented"
+						tryCompileDecl = (0<>0)
+						Exit Function
+					End If
+
+					resultType = "Integer"
+					If procType = "SUB" Then
+						Print "; decl of SUB procedure with result type description will be treated as FUNCTION"
+					End If
+				End If
+			Else
+				UnReadToken()
+			End If
+
+			If resultType = "" Then
+				If paramType = "" Then
+					vars.AddExternVoidProc(_name)
+				Else
+					vars.AddExternIntProc(_name)
+				End If
+			Else
+				If paramType = "" Then
+					vars.AddExternNullaryIntFunc(_name)
+				Else
+					vars.AddExternIntFunc(_name)
+				End If
+			End If
+
+			tryCompileDecl = (0=0)
+		End Function
+
+		' labelled (":"-separatable)
+		Function tryLoadLabelledStatement(tkns As *BoxedStrArray, _start As Long, _end As Long, ByRef out_statement As *Statement) As Long
+			Dim label_name As String
+
+			If _start + 1 = _end And IsNam(tkns->GetStr(_start)->ChrAt(1)) Then
+				out_statement = NewStatement()
+				out_statement->_opr = "single_name"
+				out_statement->_label = tkns->GetStr(_start)
+				tryLoadLabelledStatement = TRUE
+				Exit Function
+			End If
+
+			' *LABEL0
+			' *LABEL1 LET I = 0
+			If _start + 2 >= _end _
+					And tkns->GetStr(_start) = "*" _
+					And IsNam(tkns->GetStr(_start + 1)->ChrAt(1)) _
+			Then
+				label_name = tkns->GetStr(_start + 1)
+
+				If _start + 2 = _end Then
+					out_statement = NewStatement()
+					out_statement->_opr = "label"
+					out_statement->_label = label_name
+					tryLoadLabelledStatement = TRUE
+					Exit Function
+				ElseIf tryLoadCondStatement(tkns, _start + 2, _end, @_statement) Then
+					_statement->_label = label_name
+					tryLoadLabelledStatement = TRUE
+					Exit Function
+				End If
+			End If
+
+			' (LABEL0)
+			' (LABEL1) LET I = 0
+			If _start + 3 >= _end _
+					And tkns->GetStr(_start) = "(" _
+					And IsNam(tkns->GetStr(_start + 1)->ChrAt(1)) _
+					And tkns->GetStr(_start + 2) = ")" _
+			Then
+				label_name = tkns->GetStr(_start + 1)
+
+				If _start + 3 = _end Then
+					out_statement = NewStatement()
+					out_statement->_opr = "label"
+					out_statement->_label = label_name
+					tryLoadLabelledStatement = TRUE
+					Exit Function
+				ElseIf tryLoadCondStatement(tkns, _start + 3, _end, out_statement) Then
+					out_statement->_label = label_name
+					tryLoadLabelledStatement = TRUE
+					Exit Function
+				End If
+			End If
+
+			' *p = n
+			tryLoadLabelledStatement = tryLoadCondStatement(tkns, _start, _end, out_statement)
+		End Function
+
+		' ":"-separated
+		Function tryLoadStatements(tkns As *BoxedStrArray, _start As Long, _end As Long, ByRef out_statement As *Statement) As Long
+			seps As *BoxedIntArray
+			statement As *Statement
+			Dim dpt As Long
+			Dim qrt_idx As Long
+			Dim _start2 As Long
+			Dim _end2 As Long
+			Dim i As Long
+
+			out_statement = NULL
+
+			If _start >= _end Then
+				out_statement = NewStatement()
+				tryLoadStatements = TRUE
+				Exit function
+			End If
+
+			seps = NewBoxedIntArray()
+			For i = _start To _end - 1
+				If UpperStr(tkns->GetStr(i)) = "IF" Then  dpt += 1
+				If UpperStr(tkns->GetStr(i)) = "ENDIF" Then  dpt -= 1
+				If tkns->GetStr(i) = ":"  And dpt = 0 Then  seps->AddInt(i)
+			Next
+
+			seps->AddInt(_end)
+
+			out_statement = NewStatement()
+			out_statement->SetOpr(":")
+
+			_start2 = 0
+			For i = 0 To seps->Const() - 1
+				If UpperStr(tkns->GetStr(_start2)) = "REM" Then Exit For
+
+				_end2 = seps->GetInt(i)
+				qrt_idx = tkns->IndexOfStr("'", _start2)
+				If qrt_idx <> -1 Then  _end2 = qrt_idx
+
+				If tryLoadLabelledStatement(tkns, _start2, _end2, VarPtr(statement)) Then
+					out_statement->AddMovedStatement(statement)
+
+					If qrt_idx <> -1 Then  Exit For
+				Else
+					Delete seps
+					Delete out_statement
+					out_statement = NULL
+					tryLoadStatements = FALSE
+					Exit Function
+				End If
+
+				_start2 = seps(i) + 1
+			Next
+
+			Delete seps
+			tryLoadStatements = TRUE
+		End Function
+
+		' with line number
+		Function tryLoadNumberedStatements(tkns As *BoxedStrArray, _start As Long, _end As Long, ByRef out_statement As *Statement) As Long
+			Dim line_number As Long : line_number = -1
+			Dim s As String 
+
+			out_statement = NULL
+			If _start >= _end Then
+				tryLoadNumberedStatements FALSE
+				Exit Function
+			End If
+
+			s = tkns->GetStr(_start)
+			If IsNum(Asc(Mid$(s, 1,1))) Then
+				line_number = Int(Val(s))
+
+				_start += 1
+			End If
+
+			If tryLoadStatements(tkns, _start, _end, out_next, out_statement) Then
+				out_statement->_line_number = line_number
+				tryLoadNumberedStatements = TRUE
+				Exit Function
+			End If
+
+			tryLoadNumberedStatements = FALSE
+		End Function
+
+		Function compileLine() As *Statement
+			Dim line As *BoxedStrArray
+			Dim line2 As *BoxedStrArray
+			Dim statements As *Statement
+			Dim e As *Expr
+			Dim i As Long
+			Dim _len As Long
+			Dim _lbound As Long
+			Dim s As String
+			Dim s2 As String
+			Dim line_number As Long : line_number = -1
+			Dim label_name As String : label_name = ""
+
+			If Not IsOpened() Then
+				compileLine = NULL
+				Exit Function
+			End If
+
+			line =  GetTokenArrayFromLine()
+			While line->Count() > 0 _
+					And line->GetStr(line->Count() - 1) = "_"
+				line2 = GetTokenArrayFromLine()
+				line->SetMovedBoxedStr(line2->RemoveBoxedStr(0))
+
+				For i = 1 To line2->Count() - 1
+					line->AddMovedBoxedStr(line2->RemoveBoxedStr(i))
+				Next
+				Delete line2
+			Wend
+
+			If line->Count() = 0 Then
+				Delete line
+				compileLine = NULL
+			ElseIf tryLoadNumberedStatements(line, 0, line->Count(), VarPtr(statement)) Then
+				Delete line
+				compileLine = statement
+			Else
+				Delete line
+				compileLine = NULL
+			End If
+			Exit Function
+
+
+				Do
+
+					If UpperStr(s) = "GLOBAL" Then
+						s = ReadToken()
+						print "global " + s
+					ElseIf UpperStr(s) = "EXTERN" Then
+						s = ReadToken()
+						print "extern " + s
+						AddExternIntVar(s)
+					ElseIf UpperStr(s) = "DECLARE" Then
+						If Not tryCompileDecl() Then Exit Sub
+					ElseIf UpperStr(s) = "DIM" Then
+						s = ReadToken()
+						If ReadToken() = "(" Then
+							s2 = ReadToken()
+							_len = Int(Val(s2))
+							_lbound = 1
+							If UpperStr(ReadToken()) = "TO" Then
+								_lbound = _len
+								s2 = ReadToken()
+								_len = Int(Val(s2)) - _lbound + 1
+								ReadToken()
+							End If
+							AddIntArray(s, _len, _lbound)
+						Else
+							UnReadToken()
+							AddIntVar(s)
+						End If
+					ElseIf UpperStr(s) = "GOTO" Then
+						s = ReadToken()
+						If s = "*" Then
+							s = ReadToken()
+						End If
+
+						If IsNum(Asc(Mid$(s, 1,1))) Then
+							s = "BC_LINE_" + s
+							If lines_are_disabled = 1 Then
+								print "; line labels are disabled"
+								Exit Sub
+							End If
+						End If
+						print "jmp " + s
+					ElseIf UpperStr(s) = "IF" Then
+						e = compileExpr()
+						s = ReadToken()
+						If UpperStr(s) = "THEN" Then
+							s = ReadToken()
+						End If
+
+						If IsNum(Asc(Mid$(s,1,1))) Then
+							printCondJump(e,TRUE,"BC_LINE_" + s)
+
+							If lines_are_disabled = 1 Then
+								print "; line labels are disabled"
+								Exit Sub
+							End If
+						Else
+							printCondJump(e,FALSE,"BC_LINE_" + Str$(line_number) + "_END")
+							line_label_is_requird = 1
+							' s is first tkn inside THEN
+							Continue
+						End If
+					ElseIf UpperStr(s) = "RETURN" Then
+						print "ret"
+					ElseIf (s <> "") And (s <> ":") Then
+						prefix = ""
+						If UpperStr(s) = "LET" Then
+							prefix = "LET"
+							s = ReadToken()
+						ElseIf UpperStr(s) = "CALL" Or UpperStr(s) = "GOSUB" Then
+							prefix = "CALL"
+							s = ReadToken()
+						End If
+
+						If prefix = "CALL" Then
+							If s = "*" Then  s = ReadToken()
+
+							If ReadToken() <> "(" Then
+								UnReadToken()
+							ElseIf vars.IsProc(s) Then
+								If vars.GetParamType(s) = "" Then
+									If ReadToken() <> ")" Then
+										print "; nullary or label was called with args: " + s
+										Exit Sub
+									End If
+								Else
+									If ReadToken() = ")" Then
+										print "; non nullary was called without args: " + s
+										Exit Sub
+									Else
+										UnReadToken()
+									End If
+
+									e = compileVal()
+									printExpr(e)
+									ReadToken()
+								End If
+							End If
+
+							If IsNum(Asc(Mid$(s, 1,1))) Then
+								s = "BC_LINE_" + s
+
+								If lines_are_disabled = 1 Then
+									print "; line labels are disabled"
+									Exit Sub
+								End If
+							End If
+
+							If vars.IsProc(s) Then
+								print "call " + vars.CorrectVarName(s)
+
+								If vars.GetParamType(s) <> "" Then
+									print "pop " + registerName("d")
+								End If
+							Else
+								print "call " + s
+							End If
+						Else
+							s2 = ReadToken()
+							If s2 = "(" Then
+								_lbound = vars.GetArrayLBound(s)
+								UnReadToken()
+								e = compileVal()
+								printExpr(e)
+								If ReadToken() = "=" Then
+									If int_size = 16 Then
+										e = compileExpr()
+										printExpr(e)
+										print "pop " + registerName("a")
+										print "pop " + registerName("b")
+										If _lbound <> 0 Then
+											print "sub " + registerName("b") + ", " + Str$(_lbound)
+										End If
+										print "shl " + registerName("b") + ", " + Str$(int_size / 8)
+										print "add " + registerName("b") + ", " + vars.CorrectVarName(s)
+										print "mov [" + registerName("b") + "], " + registerName("a")
+									Else
+										e = compileExpr()
+										printExpr(e)
+										print "pop " + registerName("d")
+										print "pop " + registerName("a")
+										If _lbound <> 0 Then
+											print "sub " + registerName("a") + ", " + Str$(_lbound)
+										End If
+										print "mov [" + vars.CorrectVarName(s) + "+" + registerName("a") + "*" + Str$(int_size / 8) + "], " + registerName("d")
+									End If
+								End If
+							ElseIf s2 = "=" Then
+								e = compileExpr()
+								printExpr(e)
+								print "pop " + wordName() + "[" + UseVar(s) + "]"
+							End If
+						End If
+
+					End If
+
+					s = ReadToken()
+					If s = ":" Then
+						s = ReadToken()
+					Else
+						Exit Do
+					End If
+				Loop
+
+				If lines_are_disabled = 0 Or line_label_is_requird = 1 Then
+					print "BC_LINE_"+Str$(line_number) + "_END:"
+					line_label_is_requird = 0
+				End If
+
+				NextLine()
+				line_number += 1
+			Wend
+
+			If 0 < vars.Count() Then
+				If use_thread_local Then
+					print "section .tbss"
+				Else
+					print "section .bss"
+				End If
+				For i = 0 To vars.Count() - 1
+					s = vars.GetVarName(i)
+					If vars.IsExtern(s) Then  Continue For
+
+					If vars.IsArray(s) Then
+						print s + ": res" + dataDefName() + " " + Str$(vars.GetArrayLength(s))
+					End If
+				Next
+
+				If use_thread_local Then
+					print "section .tdata"
+				Else
+					print "section .data"
+				End If
+				For i = 0 To vars.Count() - 1
+					s = vars.GetVarName(i)
+					If vars.IsExtern(s) Then  Continue For
+
+					If Not vars.IsArray(s) Then
+						print s + ": d" + dataDefName() + " 0"
+					End If
+				Next
+			End If
+		End Sub
 End Class
 
 

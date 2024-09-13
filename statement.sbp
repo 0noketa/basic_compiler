@@ -1,0 +1,110 @@
+#ifndef statement__sbp
+#define statement__sbp
+
+#include "boxed.sbp"
+#include "array.sbp"
+#include "expr.sbp"
+
+
+Class Statement
+	Protected
+		_opr As String
+		_line_number As Long
+		_label As String
+		_exprs_len As Long
+		_exprs As **Expr
+		_statements_len As Long
+		_statements As **Statement
+	Public
+		Sub Statement()
+			_opr = ""
+			_line_number = 0
+			_label = ""
+			_exprs_len = 0
+			_exprs = NULL
+			_statements_len = 0
+			_statements = NULL
+		End Sub
+
+		Sub ~Statement()
+			Dim i As Long
+
+			If _exprs <> NULL Then
+				For i = 0 To _exprs_len - 1
+					Delete _exprs[i]
+				Next
+
+				free(_exprs)
+			End If
+
+			If _statements <> NULL Then
+				For i = 0 To _statements_len - 1
+					Delete _statements[i]
+				Next
+
+				free(_statements)
+			End If
+		End Sub
+
+		Sub SetOpr(s As String)
+			_opr = s
+		End Sub
+		Function GetOpr() As String
+			GetOpr = _opr
+		End Function
+		Sub SetLineNumber(s As Long)
+			_line_number = s
+		End Sub
+		Function GetLineNumber() As Long
+			GetLineNumber = _line_number
+		End Function
+		Sub SetLabel(s As String)
+			_label = s
+		End Sub
+		Function GetLabel() As String
+			GetLabel = _label
+		End Function
+
+		Sub AddMovedExpr(e As *Expr)
+			If _exprs = NULL Then
+				_exprs = malloc(SizeOf(*Expr))
+			Else
+				_exprs = realloc(SizeOf(*Expr) * (_exprs_len + 1))
+			End If
+
+			If _exprs <> NULL Then
+				_exprs[_exprs_len] = e
+				_exprs_len = _exprs_len + 1
+			End If
+		End Sub
+		Function GetExpr(i As Long) As *Expr
+			If _exprs = NULL Or i >= _exprs_len Then
+				GetExpr = NULL
+			Else
+				GetExpr = _exprs[i]
+			End If
+		End Function
+
+		Sub AddMovedStatement(e As *Statement)
+			If _statements = NULL Then
+				_statements = malloc(SizeOf(*Statement))
+			Else
+				_statements = realloc(SizeOf(*Statement) * (_statements_len + 1))
+			End If
+
+			If _statements <> NULL Then
+				_statements[_statements_len] = e
+				_statements_len = _statements_len + 1
+			End If
+		End Sub
+		Function GetStatement(i As Long) As *Statement
+			If _statements = NULL Or i >= _statements_len Then
+				SetStatement = NULL
+			Else
+				SetStatement = _statements[i]
+			End If
+		End Function
+End Class
+
+
+#endif

@@ -4,12 +4,14 @@
 #include once "crt.bi"
 #include once "ab.bi"
 #include once "file.bi"
+#include once "array.bi"
 
 
-Function IsNam(c As Long) As Long
+Function IsNamHead(c As Long) As Long
 	Return _
 		( (Asc("A")<=c) And (c<=Asc("Z")) ) Or _
-		( (Asc("a")<=c) And (c<=Asc("z")) )
+		( (Asc("a")<=c) And (c<=Asc("z")) ) Or _
+		(c=Asc("_"))
 End Function
 
 Function IsNum(c As Long) As Long
@@ -17,8 +19,8 @@ Function IsNum(c As Long) As Long
 		(Asc("0")<=c) And (c<=Asc("9"))
 End Function
 
-Function IsNamOrNum(c As Long) As Long
-	Return IsNam(c) Or IsNum(c)
+Function IsNam(c As Long) As Long
+	Return IsNamHead(c) Or IsNum(c)
 End Function
 
 Function IsNotAny(c As Long) As Long
@@ -54,6 +56,8 @@ Type SrcFile
 		Declare Function ReadToken() As String
 		Declare Sub UnReadToken()
 		Declare Sub TrimLeft(ByRef s As String)
+
+		Declare Function GetTokenArrayFromLine() As BoxedStrArray Ptr
 
 		' from  OFile
 		Declare Function Error() As Long
@@ -100,11 +104,17 @@ Function SrcFile.AtEol() As Long
 End Function
 
 Sub SrcFile.NextLine()
-	current_line= ReadLn()
+	current_line = ReadLn()
 
 	TrimLeft(current_line)
-	qt_pos= InStr(1, current_line, Chr(34))
-	If qt_pos=0 Then  qt_pos= Len(current_line)
+	qt_pos = InStr(1, current_line, Chr(39))
+	If qt_pos = 0 Then
+		qt_pos = Len(current_line)
+	Else
+		' Print "; comment: ", current_line
+		current_line = Mid$(current_line, 1, qt_pos - 1)
+		' Print ";        : ", current_line
+	End If
 End Sub
 
 Function SrcFile.ReadToken() As String
@@ -125,8 +135,8 @@ Function SrcFile.ReadToken() As String
 	l= Len(current_line)
 	c= Asc(Mid$(current_line, 1,1))
 	sizeOfLastNoise= 0
-	If IsNam(c) Then
-		f = ProcPtr(IsNamOrNum)
+	If IsNamHead(c) Then
+		f = ProcPtr(IsNam)
 	ElseIf IsNum(c) Then
 		f = ProcPtr(IsNum)
 	ElseIf IsQrt(c) Then
@@ -178,6 +188,18 @@ Sub SrcFile.TrimLeft(ByRef s As String)
 	s= Mid$(s, i)
 End Sub
 
+Function SrcFile.GetTokenArrayFromLine() As BoxedStrArray Ptr
+	Dim result As BoxedStrArray Ptr = NewBoxedStrArray()
+	Dim s As String
+
+	While Len(current_line) > 0
+		s = ReadToken()
+		result->AddStr(s)
+	Wend
+
+	NextLine()
+	Return result
+End Function
 
 Function SrcFile.Error() As Long
 	Return _file.Error()

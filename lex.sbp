@@ -4,11 +4,14 @@
 
 #include "libc.sbp"
 #include "file.sbp"
+#include "array.sbp"
 
-Function IsNam(c As Long) As Long
-	IsNam= _
+
+Function IsNamHead(c As Long) As Long
+	IsNamHead= _
 		( (Asc("A")<=c) And (c<=Asc("Z")) ) Or _
-		( (Asc("a")<=c) And (c<=Asc("z")) )
+		( (Asc("a")<=c) And (c<=Asc("z")) ) Or _
+		(c="_")
 End Function
 
 Function IsNum(c As Long) As Long
@@ -16,8 +19,8 @@ Function IsNum(c As Long) As Long
 		(Asc("0")<=c) And (c<=Asc("9"))
 End Function
 
-Function IsNamOrNum(c As Long) As Long
-	IsNamOrNum= IsNam(c) Or IsNum(c)
+Function IsNam(c As Long) As Long
+	IsNam= IsNamHead(c) Or IsNum(c)
 End Function
 
 Function IsNotAny(c As Long) As Long
@@ -60,7 +63,7 @@ Class SrcFile: Inherits OFile
 		Function ReadToken() As String
 			Dim i As Long
 			Dim l As Long
-			' Dim f As *Function(param_c As Long) As Long
+			Dim f As *Function(param_c As Long) As Long
 			Dim sizeOfLastNoise As Long
 			Dim c As Long
 			TrimLeft(current_line)
@@ -75,76 +78,27 @@ Class SrcFile: Inherits OFile
 			c= Asc(Mid$(current_line, 1,1))
 			sizeOfLastNoise= 0
 
-			' inline
-			If IsNam(c) Then
-				i= 1
-				c= Asc(Mid$(current_line, 1,1))
-				Do
-					i += 1
-					If l<i Then
-						sizeOfLastNoise= 0
-						Exit Do
-					End If
-					c = Asc(Mid$(current_line, i,1))
-				Loop While IsNamOrNum(c)
+			If IsNamHead(c) Then
+				f = AddressOf(IsNam)
 			ElseIf IsNum(c) Then
-				i= 1
-				c= Asc(Mid$(current_line, 1,1))
-				Do
-					i += 1
-					If l<i Then
-						sizeOfLastNoise= 0
-						Exit Do
-					End If
-					c = Asc(Mid$(current_line, i,1))
-				Loop While IsNum(c)
+				f = AddressOf(IsNum)
 			ElseIf IsQrt(c) Then
+				f = AddressOf(IsNotQrt)
 				sizeOfLastNoise= 1
-				i= 1
-				c= Asc(Mid$(current_line, 1,1))
-				Do
-					i += 1
-					If l<i Then
-						sizeOfLastNoise= 0
-						Exit Do
-					End If
-					c = Asc(Mid$(current_line, i,1))
-				Loop While IsNotQrt(c)
 			Else
-				i= 1
-				c= Asc(Mid$(current_line, 1,1))
-				Do
-					i += 1
-					If l<i Then
-						sizeOfLastNoise= 0
-						Exit Do
-					End If
-					c = Asc(Mid$(current_line, i,1))
-				Loop While IsNotAny(c)
+				f = AddressOf(IsNotAny)
 			End If
 
-			' // func ptr seems broken
-			' If IsNam(c) Then
-			' 	f = AddressOf(IsNamOrNum)
-			' ElseIf IsNum(c) Then
-			' 	f = AddressOf(IsNum)
-			' ElseIf IsQrt(c) Then
-			' 	f = AddressOf(IsNotQrt)
-			' 	sizeOfLastNoise= 1
-			' Else
-			' 	f = AddressOf(IsNotAny)
-			' End If
-
-			' i= 1
-			' c= Asc(Mid$(current_line, 1,1))
-			' Do
-			' 	i += 1
-			' 	If l<i Then
-			' 		sizeOfLastNoise= 0
-			' 		Exit Do
-			' 	End If
-			' 	c = Asc(Mid$(current_line, i,1))
-			' Loop While f(c)
+			i= 1
+			c= Asc(Mid$(current_line, 1,1))
+			Do
+				i += 1
+				If l<i Then
+					sizeOfLastNoise= 0
+					Exit Do
+				End If
+				c = Asc(Mid$(current_line, i,1))
+			Loop While f(c)
 
 			i += sizeOfLastNoise
 
@@ -171,6 +125,19 @@ Class SrcFile: Inherits OFile
 
 			s= Mid$(s, i)
 		End Sub
+
+		Function GetTokenArrayFromLine() As *BoxedStrArray
+			Dim result As *BoxedStrArray : result = NewBoxedStrArray()
+			Dim s As String
+
+			While Len(current_line) > 0
+				s = ReadToken()
+				result->AddStr(s)
+			Wend
+
+			NextLine()
+			GetTokenArrayFromLine = result
+		End Function
 End Class
 
 

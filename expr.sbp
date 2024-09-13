@@ -2,6 +2,8 @@
 #ifndef expr__sbp
 #define expr__sbp
 
+' #include "array.sbp"
+
 ' Class Ctx
 ' End Class
 

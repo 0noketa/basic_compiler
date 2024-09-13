@@ -3,6 +3,7 @@
 
 #include once "crt.bi"
 #include once "ab.bi"
+#include once "array.bi"
 
 
 ' Type Ctx
@@ -146,7 +147,11 @@ Function Expr.OprIs(s As String) As Long
 	Return (opr=s)
 End Function
 
-
+Function NewExpr(_opr As String) As Expr Ptr
+	Dim e As Expr Ptr = New Expr()
+	e->SetOpr(_opr)
+	Return e
+End Function
 
 
 #endif

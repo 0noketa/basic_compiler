@@ -1,4 +1,4 @@
-FBC=fbc32
+FBC=fbc32 -lang fb
 ABC=ab
 
 bc:

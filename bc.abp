@@ -286,113 +286,7 @@ Class BasicCompiler
 		Sub printCondJmp(e As *Expr, label As String)
 		End Sub
 
-		Function tryCompileDecl() As Long
-			Dim procType As String
-			Dim paramType As String
-			Dim resultType As String
-			Dim s As String
-			Dim _name As String
-
-			s = ReadToken()
-			If UpperStr(s) = "SUB" Then
-				procType = "SUB"
-				paramType = ""
-				resultType = ""
-			ElseIf UpperStr(s) = "FUNCTION" Then
-				procType = "FUNCTION"
-				paramType = ""
-				resultType = "Integer"
-			Else
-				Print "; declaration of unknown element " + s
-				tryCompileDecl = (0<>0)
-				Exit Function
-			End If
-
-			_name = ReadToken()
-			print "extern " + _name
-
-			s = ReadToken()
-			If UpperStr(s) = "CDECL" Then
-				s = ReadToken()
-			End If
-
-			If s = "(" Then
-				s = ReadToken()
-				If s <> ")" Then
-					paramType = "Integer"
-
-					If UpperStr(s) = "BYVAL" Then
-						s = ReadToken()
-					ElseIf UpperStr(s) = "BYREF" Then
-						Print "; decl of procedure with ByRef params are not implemented"
-						tryCompileDecl = (0<>0)
-						Exit Function
-					End If
-
-					s = ReadToken()
-					If UpperStr(s) = "AS" Then
-						s = ReadToken()
-						If UpperStr(s) <> "INTEGER" And UpperStr(s) <> "LONG" Then
-							Print "; decl of procedure with non integer/log params are not implemented"
-							tryCompileDecl = (0<>0)
-							Exit Function
-						End If
-
-						paramType = "Integer"
-
-						s = ReadToken()
-						If s = "," Then
-							Print "; decl of procedure with >=2 params are not implemented"
-							tryCompileDecl = (0<>0)
-							Exit Function
-						End If
-					End If
-				End If
-
-				If s <> ")" Then
-					Print "; decl with unknown element " + s
-					tryCompileDecl = (0<>0)
-					Exit Function
-				End If
-
-				s = ReadToken()
-				If UpperStr(s) <> "AS" Then
-					UnReadToken()
-				Else
-					s = ReadToken()
-					If UpperStr(s) <> "INTEGER" And UpperStr(s) <> "LONG" Then
-						Print "; decl of procedure with non integer/log params are not implemented"
-						tryCompileDecl = (0<>0)
-						Exit Function
-					End If
-
-					resultType = "Integer"
-					If procType = "SUB" Then
-						Print "; decl of SUB procedure with result type description will be treated as FUNCTION"
-					End If
-				End If
-			Else
-				UnReadToken()
-			End If
-
-			If resultType = "" Then
-				If paramType = "" Then
-					vars.AddExternVoidProc(_name)
-				Else
-					vars.AddExternIntProc(_name)
-				End If
-			Else
-				If paramType = "" Then
-					vars.AddExternNullaryIntFunc(_name)
-				Else
-					vars.AddExternIntFunc(_name)
-				End If
-			End If
-
-			tryCompileDecl = (0=0)
-		End Function
-
-		Sub compile()
+		Sub compileLine()
 			Dim e As *Expr
 			Dim i As Long
 			Dim _len As Long
@@ -441,7 +335,7 @@ Class BasicCompiler
 				End If
 
 				' QB/VB label
-				If IsNam(Asc(Mid$(s, 1,1))) Then
+				If IsNamHead(Asc(Mid$(s, 1,1))) Then
 					If ReadToken() = ":" Then
 						print s + ":"
 						s = ReadToken()

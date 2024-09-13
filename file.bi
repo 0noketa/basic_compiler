@@ -29,7 +29,7 @@ Constructor OFile()
 	mode = "r"
 	newline = Chr$(10)
 	hdl = NULL
-	_error = (0 = 0)
+	_error = TRUE
 End Constructor
 
 Sub OFile.Init(prm_name As String, prm_mode As String)
@@ -59,29 +59,28 @@ Function OFile.AtEof() As Long
 End Function
 
 Function OFile.ReadLn() As String
+	Dim s As BytePtr
 	Dim p As BytePtr
 	Dim q As BytePtr
 	Dim result As String
 
 	If (mode <> "r") Or (hdl = NULL) Then  Return ""
 
-	p = Allocate(SizeOf(Byte) * 256)
-	If p = NULL Then  Return ""
+	If feof(hdl) <> 0 Then  Return ""
 
-	result = ""
-	While feof(hdl) = 0
-		fgets(p, 254, hdl)
-		q = strchr(p, 10)
-		If q <> NULL Then
-			*(q + 0) = 0
-			result = result + MakeStr(p)
-			Exit While
-		Else
-			result = result + MakeStr(p)
-		End If
-	Wend
+	s = Allocate(SizeOf(Byte) * 512)
+	If s = NULL Then  Return ""
 
-	Deallocate(p)
+	fgets(s, 510, hdl)
+	p = strchr(s, 10)
+	q = strchr(s, 13)
+
+	If q <> NULL Then  *(q + 0) = 0
+	If p <> NULL Then  *(p + 0) = 0
+
+	result = MakeStr(s)
+
+	Deallocate(s)
 	Return result
 End Function
 

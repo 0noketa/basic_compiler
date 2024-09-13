@@ -1,0 +1,280 @@
+/* .. 2015 5/21 .. */
+#ifndef array__sbp
+#define array__sbp
+#strict
+
+/* CLI-like Array */
+
+#include "comparable.sbp"
+
+
+Class BoxedArray
+	Protected
+	Public
+		pGetItem As *Function(_this As *BoxedArray, i As Long) As *IComparable
+		pSetItem As *Sub(_this As *BoxedArray, i As Long, v As *IComparable)
+		pIndexOfItem As *Function(_this As *BoxedArray, v As *IComparable) As Long
+		pAddItem As *Sub(_this As *BoxedArray, v As *IComparable)
+		pLength As *Function(_this As *BoxedArray) As Long
+		_this As VoidPtr
+
+		' should be public for virtual methods
+		_cap As Long
+		_length As Long
+		_array As **IComparable
+
+		' do not call directly. use NewBoxedArray instead of this.
+		Sub BoxedArray()
+			_this = NULL
+			_length = 0
+			_cap = 16
+			_array = malloc(SizeOf(*IComparable) * _cap)
+			pGetItem = AddressOf(BoxedArray_GetItem)
+			pSetItem = AddressOf(BoxedArray_SetItem)
+			pIndexOfItem = AddressOf(BoxedArray_IndexOfItem)
+			pAddItem = AddressOf(BoxedArray_AddItem)
+			pLength = AddressOf(BoxedArray_Length)
+
+			Dim i As Long
+			For i = 0 To _cap - 1
+				_array[i] = NULL
+			Next
+		End Sub
+
+		Sub ~BoxedArray()
+			If _array <> NULL Then
+				free(_array)
+				_array = NULL
+			End If
+		End Sub
+
+		Sub Shuffle(n As Long)
+			Dim p As *IComparable
+			Dim q As *IComparable
+			Dim x As Long
+			Dim i As Long, j As Long
+
+			'Randomize 10
+			While 0<n
+				x = Length()
+				i = Abs(Int(Rnd()*x)) Mod x
+				j = Abs(Int(Rnd()*x)) Mod x
+				p = GetItem(i)
+				q = GetItem(j)
+				SetItem(i, q)
+				SetItem(j, p)
+				n = n-1
+			Wend
+		End Sub
+
+		Sub Sort()
+			Dim p As *IComparable
+			Dim q As *IComparable
+			Dim i As Long
+			Dim j As Long
+			Dim done As Long
+
+			Do
+				done = TRUE
+
+				For i = 0 To Length() - 2
+					For j = i + 1 To Length() - 1
+						p = GetItem(i)
+						q = GetItem(j)
+						If p->CompareTo(q) = -1 Then
+							SetItem(i, q)
+							SetItem(j, p)
+							done = FALSE
+						End If
+					Next
+				Next
+				Sleep(1)
+			Loop While done = FALSE
+		End Sub
+
+		Function GetItem(i As Long) As *IComparable
+			GetItem = pGetItem(_this, i)
+		End Function
+
+		Sub SetItem(i As Long, v As *IComparable)
+			pSetItem(_this, i, v)
+		End Sub
+
+		Function IndexOfItem(v As *IComparable) As Long
+			IndexOfItem = pIndexOfItem(_this, v)
+		End Function
+
+		Sub AddItem(v As *IComparable)
+			pAddItem(_this, v)
+		End Sub
+
+		Function Length() As Long
+			Length = pLength(_this)
+		End Function
+		Function Count() As Long
+			Count = Length()
+		End Function
+End Class
+
+Function BoxedArray_GetItem(_this As *BoxedArray, i As Long) As *IComparable
+	If (0 <= i) And (i < _this->_length) Then
+		BoxedArray_GetItem = _this->_array[i]
+	Else
+		BoxedArray_GetItem = NULL
+	End If
+End Function
+
+Sub BoxedArray_SetItem(_this As *BoxedArray, i As Long, v As *IComparable)
+	If (0 <= i) And (i < _this->_length) Then
+		_this->_array[i] = v
+	End If
+End Sub
+
+Sub BoxedArray_AddItem(_this As *BoxedArray, v As *IComparable)
+	If _this->_length >= _this->_cap Then
+		_this->_cap += 16
+		_this->_array = realloc(_this->_array, SizeOf(*IComparable) * _this->_cap)
+	End If
+
+	_this->_length = _this->_length + 1
+	BoxedArray_SetItem(_this, _this->_length - 1, v)
+End Sub
+
+Function BoxedArray_IndexOfItem(_this As *BoxedArray, v As *IComparable) As Long
+	Dim i As Long
+	BoxedArray_IndexOfItem = -1
+	For i = 0 To _this->_length-1
+		If v->CompareTo(_this->_array[i]) = 0 Then 
+			BoxedArray_IndexOfItem = i
+			Exit For
+		End If
+	Next
+End Function
+
+Function BoxedArray_Length(_this As *BoxedArray) As Long
+	Dim p As *BoxedArray : p = _this
+	BoxedArray_Length = p->_length
+End Function
+
+Function NewBoxedArray() As *BoxedArray
+	Dim p As *BoxedArray : p = New BoxedArray
+	p->_this = p
+	NewBoxedArray = p
+End Function
+
+
+Class BoxedIntArray : Inherits BoxedArray
+	Public
+		' do not call directly. use NewBoxedIntArray instead of this.
+		Sub BoxedIntArray()
+		End Sub
+
+		Sub ~BoxedIntArray()
+			Dim i As Long
+			For i = 0 To _length - 1
+				If GetBoxedInt(i) <> NULL Then  Delete GetBoxedInt(i)
+			Next
+		End Sub
+
+		Sub AddMovedOInt(p As *BoxedInteger)
+			AddItem(p)
+		End Sub
+		Sub AddInt(i As Long)
+			Dim p As *BoxedInteger : p = NewBoxedInteger(i)
+			AddMovedOInt(p)
+		End Sub
+
+		Function IndexOfOInt(p As *BoxedInteger) As Long
+			IndexOfOInt = IndexOfItem(p)
+		End Function
+		Function IndexOfInt(i As Long) As Long
+			Dim p As *BoxedInteger : p = NewBoxedInteger(i)
+			IndexOf = IndexOfItem(p)
+			Delete p
+		End Function
+
+		Function GetBoxedInt(idx As Long) As *BoxedInteger
+			GetBoxedInt = GetItem(idx)
+		End Function
+		Function GetInt(idx As Long) As Long
+			Dim p As *BoxedInteger : p = GetItem(idx)
+			If p <> NULL Then
+				GetInt = p->Value()
+			Else
+				GetInt = 0
+			End If
+		End Function
+End Class
+
+Function NewBoxedIntArray() As *BoxedIntArray
+	Dim p As *BoxedIntArray : p = New BoxedIntArray
+	p->_this = p
+	NewBoxedIntArray = p
+End Function
+
+
+Class BoxedStrArray : Inherits BoxedArray
+	Public
+		' do not call directly. use NewBoxedStrArray instead of this.
+		Sub BoxedStrArray()
+		End Sub
+
+		Sub ~BoxedStrArray()
+			Dim i As Long
+			For i = 0 To _length - 1
+				If GetBoxedStr(i) <> NULL Then  Delete GetBoxedStr(i)
+			Next
+		End Sub
+
+		Sub AddMovedOStr(p As *BoxedString)
+			AddItem(p)
+		End Sub
+		Sub AddStr(i As String)
+			Dim p As *BoxedString : p = NewBoxedString(i)
+			AddMovedOStr(p)
+		End Sub
+
+		Function IndexOfOStr(p As *BoxedString) As Long
+			IndexOfOStr = IndexOfItem(p)
+		End Function
+		Function IndexOfStr(s As String) As Long
+			Dim p As *BoxedString : p = NewBoxedString(s)
+			IndexOf = IndexOfItem(p)
+			Delete p
+		End Function
+
+		Sub SetMovedBoxedStr(idx As Long, o As *BoxedString)
+			Dim o0 As *BoxedString = GetItem(idx)
+			Delete o0
+			SetItem(idx, o)
+		End Sub
+		Function RemoveBoxedStr(idx As Long) As *BoxedString
+			RemoveBoxedStr = GetItem(idx)
+			SetItem(idx, NULL)
+		End Function
+		Sub DeleteBoxedStr(idx As Long) As *BoxedString)
+			Dim o As *BoxedString : o = RemoveBoxedStr(idx)
+			Delete o
+		End Sub
+
+		Function GetBoxedStr(idx As Long) As *BoxedString
+			GetBoxedStr = GetItem(idx)
+		End Function
+		Function GetStr(idx As Long) As String
+			Dim p As *BoxedString : p = GetItem(idx)
+			If p <> NULL Then
+				GetStr = p->Value()
+			Else
+				GetStr = ""
+			End If
+		End Function
+End Class
+
+Function NewBoxedStrArray() As *BoxedStrArray
+	Dim p As *BoxedStrArray : p = New BoxedStrArray
+	p->_this = p
+	NewBoxedStrArray = p
+End Function
+
+
+#endif
