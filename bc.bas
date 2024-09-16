@@ -115,11 +115,10 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 	Dim s As String
 
 	If e->GetOpr() = EXPR_APPLY Then
-		print "; apply"
 		s = e->GetVal()
 		If UCase(s) = "LEN" Then
 			If e->GetArgc() = 0 Then
-				print "* error *"
+				print "; no arg for " + s
 				Return
 			End If
 
@@ -131,8 +130,8 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 				print "push 1"
 			End If
 		ELseIf UCase(s) = "LBOUND" Then
-				If e->GetArgc() = 0 Then
-				print "* error *"
+			If e->GetArgc() = 0 Then
+				print "; no arg for " + s
 				Return
 			End If
 
@@ -145,8 +144,8 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			End If
 		ELseIf UCase(s) = "UBOUND" Then
 			If e->GetArgc() = 0 Then
-					print "* error *"
-					Return
+				print "; no arg for " + s
+				Return
 			End If
 
 			e2 = e->GetArgv(0)
@@ -171,7 +170,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 				print "pop " + registerName("d")
 			End If
 
-			If vars.GetResultType(s) = "" Then
+			If vars.GetResultType(s) = TYPE_VOID Then
 				print "; void was returned. check is it not inside expr?" 
 			Else
 				print "push " + registerName("a")
@@ -202,7 +201,6 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			End If
 		End If
 	Else
-		print "; val"
 		If e->GetArgc() <> 0 Then
 			print "; * error val is: " + e->GetOpr()
 			Return
@@ -212,7 +210,6 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 		If IsNum(Asc(Mid$(s, 1,1))) Then
 			print "push " + wordName() + " " + s
 		Else
-			print ";push " + s
 			If Not vars.IsVar(s) Then
 				Print "; inline decl " + s
 				vars.AddIntVar(s)
@@ -233,7 +230,6 @@ Sub BasicCompiler.printExprMul(e As Expr Ptr)
 			For i = 0 To 1
 				printExprVal(e->GetArgv(i))
 			Next
-			print "; mul/div"
 			print "pop " + registerName("c")
 			print "pop " + registerName("a")
 			If s = "*" Then
@@ -261,7 +257,6 @@ Sub BasicCompiler.printExprAdd(e As Expr Ptr)
 		For i = 0 To 1
 			printExprMul(e->GetArgv(i))
 		Next
-		print "; add/sub"
 		print "pop " + registerName("c")
 		print "pop " + registerName("a")
 		If s = "+" Then
@@ -288,7 +283,6 @@ Sub BasicCompiler.printExprCmp(e As Expr Ptr)
 			s = "e"
 		End Select
 
-		print "; cmp "
 		print "pop " + registerName("c")
 		print "pop " + registerName("d")
 		print "xor " + registerName("a") + ", " + registerName("a")
@@ -306,16 +300,23 @@ Sub BasicCompiler.printExprAssign(e As Expr Ptr)
 
 	If e->GetOpr() = EXPR_ASSIGN Then
 		printExprCmp(e->GetArgv(1))
-		Print "; assigin to"
+
 		dst = e->GetArgv(0)
 		s = dst->GetVal()
 		If dst->GetOpr() = EXPR_APPLY Then
-			Print ";  use index"
 			printExprCmp(dst->GetArgv(0))
 
 			print "pop " + registerName("a")
+			If Not vars.IsVar(s) Then
+				Print "; error. unknown array: " + s
+			End If
+
 			print "pop " + wordName() + "[" + vars.CorrectVarName(s) + "+" + registerName("a") + "*" + Str(int_size / 8) + "]"
 		Else
+			If Not vars.IsVar(s) Then
+				Print "; inline decl " + s
+				vars.AddIntVar(s)
+			End If
 			print "pop " + wordName() + "[" + vars.CorrectVarName(s) + "]"
 		End If
 	Else
@@ -379,21 +380,21 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 		Case STMT_EMPTY
 			Return TRUE
 		Case STMT_DECL_VAR
-			Print "; Dim " + stmt->GetStr(0)
+			' Print "; Dim " + stmt->GetStr(0)
 			Return TRUE
 		Case STMT_DECL_PROC
-			Print "; Declare Sub " + stmt->GetStr(0)
+			' Print "; Declare Sub " + stmt->GetStr(0)
 			Return TRUE
 		Case STMT_BEGIN_SUB
-			Print "; Sub " + stmt->GetStr(0)
+			' Print "; Sub " + stmt->GetStr(0)
 			Return TRUE
 		Case STMT_BEGIN_FUNCTION
-			Print "; Function " + stmt->GetStr(0)
+			' Print "; Function " + stmt->GetStr(0)
 			Return TRUE
 		Case STMT_STATEMENTS
-			Print "; statements"
-			For i = 0 To stmt->GetStatementsCount() - 1
-				Print "; .statement" + Str$(i)
+			' Print "; statements"
+			For i = 0 To stmt->CountStatements() - 1
+				' Print "; .statement" + Str$(i)
 				If tryPrintStatement(stmt->GetStatement(i),  line_number) = FALSE Then
 					Return FALSE
 				End If
@@ -424,7 +425,7 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 		Case STMT_IF
 			e = stmt->GetExpr(0)
 			s = e->GetOpr()
-			Print ";IF(" + s + ")"
+			' Print ";IF(" + s + ")"
 			If (s = "<") Or (s = ">") Or (s = "=") Then
 				If e->GetArgc() <> 2 Then
 					print "* error in conditional expression *"
@@ -454,7 +455,7 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 				print "or " + registerName("a") + ", " + registerName("a")
 			End If
 
-			If stmt->GetStatementsCount() >= 2 Then
+			If stmt->CountStatements() >= 2 Then
 				print s + " BC_LINE_" + Str$(line_number) + ".ELSE"
 			Else
 				print s + " BC_LINE_" + Str$(line_number) + ".END"
@@ -464,7 +465,7 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 				Return FALSE
 			End If
 
-			If stmt->GetStatementsCount() >= 2 Then
+			If stmt->CountStatements() >= 2 Then
 				print "jmp BC_LINE_" + Str$(line_number) + ".END"
 				print "BC_LINE_" + Str$(line_number) + ".ELSE:"
 
@@ -475,7 +476,6 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 
 			Return TRUE
 		Case STMT_LET
-			Print "; let"
 			printExprAssign(stmt->GetExpr(0))
 			Return TRUE
 	End Select
@@ -559,6 +559,8 @@ Function BasicCompiler.tryLoadDeclsFromStatement(stmt As Statement Ptr, ByRef en
 					env->AddExternIntArray(_name, _ubound - _lbound + 1, _lbound)
 				ElseIf stmt->CountStrs() = 5 Then
 					env->AddIntArray(_name, _ubound - _lbound + 1, _lbound)
+				Else
+					Print "; unknown var decl: " + _name
 				End If
 			Else
 				If InStr(1, attr, ATTR_EXTERN) Then
@@ -569,7 +571,7 @@ Function BasicCompiler.tryLoadDeclsFromStatement(stmt As Statement Ptr, ByRef en
 			End If
 			Return TRUE
 		Case STMT_STATEMENTS
-			For i = 0 To stmt->GetStatementsCount() - 1
+			For i = 0 To stmt->CountStatements() - 1
 				If tryLoadDeclsFromStatement(stmt->GetStatement(i), env) = FALSE Then
 					Return FALSE
 				End If
@@ -617,7 +619,6 @@ Sub BasicCompiler.compile()
 	Redim prog(0)
 
 	abs_line_number = 1
-	line_number = 1
 	While Not _src.AtEof()
 		Print ";line " + Str$(abs_line_number)
 		src = _src.loadLine()  ' NULLable
@@ -630,6 +631,7 @@ Sub BasicCompiler.compile()
 	Wend
 
 	Print "; ---- loaded entire source ----"
+	' close file at here
 	
 	For i = LBound(prog) To UBound(prog)
 		src = prog(i)
@@ -647,10 +649,12 @@ Sub BasicCompiler.compile()
 	line_number = 1
 	For i = LBound(prog) To UBound(prog)
 		src = prog(i)
-		If src = NULL Then
-		ElseIf tryPrintRootStatement(src,  line_number) = FALSE Then
-			Print "; failed to print"
-			Return
+		If src <> NULL Then
+			Print "; ####src#### : " + src->ToString()
+			If tryPrintRootStatement(src,  line_number) = FALSE Then
+				Print "; failed to print"
+				Return
+			End If
 		End If
 
 		line_number += 1

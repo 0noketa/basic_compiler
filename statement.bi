@@ -15,6 +15,7 @@ Const STMT_GOSUB = "GOSUB"
 Const STMT_RETURN = "RETURN"
 Const STMT_IF = "IF"
 Const STMT_ELSE = "ELSE"
+Const STMT_WHILE = "WHILE"
 Const STMT_DECL_VAR = "DECL_VAR"
 Const STMT_DECL_PROC = "DECL_PROC"
 Const STMT_BEGIN_IF = "BEGIN.IF"
@@ -67,11 +68,14 @@ Type Statement Extends IComparable
 		Declare Function CountStrs() As Long
 		Declare Sub AddMovedExpr(e As Expr Ptr)
 		Declare Function GetExpr(i As Long) As Expr Ptr
-		Declare Function GetExprsCount() As Long
+		Declare Function CountExprs() As Long
 		Declare Sub AddMovedStatement(e As Statement Ptr)
 		Declare Function GetStatement(i As Long) As Statement Ptr
-		Declare Function GetStatementsCount() As Long
+		Declare Function CountStatements() As Long
 		Declare Function CompareTo(p As IComparable Ptr) As Long
+
+		Declare Sub Simplify()
+		Declare Function ToString() As String
 End Type
 
 
@@ -156,7 +160,7 @@ Function Statement.GetExpr(i As Long) As Expr Ptr
 		Return *(_exprs + i)
 	End If
 End Function
-Function Statement.GetExprsCount() As Long
+Function Statement.CountExprs() As Long
 	Return _exprs_len
 End Function
 
@@ -179,7 +183,7 @@ Function Statement.GetStatement(i As Long) As Statement Ptr
 		Return *(_statements + i)
 	End If
 End Function
-Function Statement.GetStatementsCount() As Long
+Function Statement.CountStatements() As Long
 	Return _statements_len
 End Function
 
@@ -193,6 +197,58 @@ Function Statement.CompareTo(p As IComparable Ptr) As Long
 	Else
 		Return 0
 	End If
+End Function
+
+Function Statement.ToString() As String
+	Dim s As String
+
+	If GetLineNumber() > -1 Then
+		s = Str$(GetLineNumber) + " "
+	Else
+		s = "  "
+	End If
+
+	Select Case GetOpr()
+	Case STMT_LET
+		s += "Let " + GetExpr(0)->ToString()
+		Return s
+	Case STMT_IF
+		s += "If " + GetExpr(0)->ToString() + " Then "
+		s += GetStatement(0)->ToString()
+		If CountStatements() > 1 Then  s += " Else " + GetStatement(1)->ToString()
+		Return s
+	Case STMT_WHILE
+		s += "While " + GetExpr(0)->ToString() + " Do "
+		s += GetStatement(0)->ToString()
+		Return s
+	Case STMT_BEGIN_IF
+		s += "If " + GetExpr(0)->ToString() + " Then"
+		Return s
+	Case STMT_BEGIN_WHILE
+		s += "While " + GetExpr(0)->ToString()
+		Return s
+	Case STMT_GOTO
+		s += "Goto " + GetStr(0)
+		Return s
+	Case STMT_GOSUB
+		s += "Gosub " + GetStr(0)
+		Return s
+	Case STMT_RETURN
+		s += "Return"
+		Return s
+	Case STMT_STATEMENTS
+		s += GetStatement(0)->ToString()
+		If CountStatements() > 1 Then  s += " : " + GetStatement(1)->ToString()
+		Return s
+	Case STMT_LABEL
+		s += GetLabel() + ":"
+		Return s
+	Case STMT_EMPTY
+		' s += "' empty line"
+		Return s
+	Case Else
+		Return "[stmt:" + GetOpr() + "]"
+	End Select
 End Function
 
 

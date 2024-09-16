@@ -10,17 +10,6 @@
 #include once "environment.bi"
 
 
-Const EXPR_ASSIGN = "ASSIGN"
-Const EXPR_VAL = "VAL"
-Const EXPR_DEREF = "DEREF"
-Const EXPR_APPLY = "APPLY"
-Const EXPR_ADD = "ADD"
-Const EXPR_SUB = "SUB"
-Const EXPR_MUL = "MUL"
-
-
-
-
 
 
 Type BasicSrc
@@ -621,42 +610,34 @@ Function BasicSrc.tryLoadVarDeclStatement(tkns As BoxedStrArray Ptr, _start As L
 	Dim range_min As Long
 	Dim range_max As Long
 	Dim attr As String
-	Dim i As Long
 
 	out_statement = NULL
 	attr = ""
 
 	If _start + 1 >= _end Then  Return FALSE
 
-	with_dim = (UCase(tkns->GetStr(_start + 1)) = "DIM")
-
-	s = tkns->GetStr(_start)
-	If UCase(s) = "GLOBAL" Then
+	If trySkipKeyword(tkns, _start, _end, "GLOBAL") Then
 		attr += ATTR_GLOBAL
-		i = _start + 1
-	ElseIf UCase(s) = "EXTERN" Then
+		trySkipKeyword(tkns, _start, _end, "DIM")
+	ElseIf trySkipKeyword(tkns, _start, _end, "EXTERN") Then
 		attr += ATTR_EXTERN
-		i = _start + 1
-	ElseIf UCase(s) = "LOCAL" Then
-		i = _start + 1
-	Else
-		If UCase(s) = "DIM" Then
-			i = _start + 1
-		Else
-			Return FALSE
+		trySkipKeyword(tkns, _start, _end, "DIM")
+	ElseIf trySkipKeyword(tkns, _start, _end, "LOCAL") Then
+		trySkipKeyword(tkns, _start, _end, "DIM")
+	ElseIf trySkipKeyword(tkns, _start, _end, "DIM") Then
+		If trySkipKeyword(tkns, _start, _end, "GLOBAL") Then
+			attr += ATTR_GLOBAL
+		ElseIf trySkipKeyword(tkns, _start, _end, "EXTERN") Then
+			attr += ATTR_EXTERN
+		ElseIf trySkipKeyword(tkns, _start, _end, "LOCAL") Then
 		End If
+	Else
+		Return FALSE
 	End If
 
-	' prefixed
-	If UCase(s) <> "DIM" And with_dim Then
-		If i + 1 >= _end Then  Return FALSE
+	_name = tkns->GetStr(_start)
 
-		i += 1
-	End If
-
-	_name = tkns->GetStr(i)
-
-	If i + 1 >= _end Then
+	If _start + 1 >= _end Then
 		out_statement = NewStatement(STMT_DECL_VAR)
 		out_statement->AddStr(attr)
 		out_statement->AddStr(_name)
@@ -664,30 +645,33 @@ Function BasicSrc.tryLoadVarDeclStatement(tkns As BoxedStrArray Ptr, _start As L
 		Return TRUE
 	End If
 
-	i += 1
+	_start += 1
 	is_array = FALSE
-	If tkns->GetStr(i) = "(" Then
-		If i + 2 >= _end Then  Return FALSE
-
-		is_array = TRUE
-		range_min = 1
-		range_max = Int(Val(tkns->GetStr(i + 1)))
-
-		If UCase(tkns->GetStr(i + 2)) = "TO" Then
-			If i + 4 >= _end Then  Return FALSE
-
-			range_min = range_max
-			range_max = Int(Val(tkns->GetStr(i + 3)))
-			i += 2
-		End If
-
-		If tkns->GetStr(i + 2) <> ")" Then
+	If tkns->GetStr(_start) = "(" Then
+		If _start + 2 >= _end Then
+			Print "; error: array with no size is not implemented"
 			Return FALSE
 		End If
 
-		i += 3
+		is_array = TRUE
+		range_min = 1
+		range_max = Int(Val(tkns->GetStr(_start + 1)))
 
-		If i >= _end Then
+		If UCase(tkns->GetStr(_start + 2)) = "TO" Then
+			If _start + 4 >= _end Then  Return FALSE
+
+			range_min = range_max
+			range_max = Int(Val(tkns->GetStr(_start + 3)))
+			_start += 2
+		End If
+
+		If tkns->GetStr(_start + 2) <> ")" Then
+			Return FALSE
+		End If
+
+		_start += 3
+
+		If _start >= _end Then
 			out_statement = NewStatement(STMT_DECL_VAR)
 			out_statement->AddStr(attr)
 			out_statement->AddStr(_name)
@@ -698,12 +682,14 @@ Function BasicSrc.tryLoadVarDeclStatement(tkns As BoxedStrArray Ptr, _start As L
 		End If
 	End If
 
-	If i + 1 >= _end Then  Return FALSE
+	If _start + 1 >= _end Then  Return FALSE
 
-	If UCase(tkns->GetStr(i)) = "AS" Then
-		_type = UCase(tkns->GetStr(i + 1))
+	If trySkipKeyword(tkns, _start, _end, "AS") Then
+		If _start >= _end Then  Return FALSE
 
-		If i + 1 < _end Then  Return FALSE
+		_type = UCase(tkns->GetStr(_start))
+
+		If _start + 1 < _end Then  Return FALSE
 
 		out_statement = NewStatement(STMT_DECL_VAR)
 		out_statement->AddStr(attr)
@@ -713,6 +699,7 @@ Function BasicSrc.tryLoadVarDeclStatement(tkns As BoxedStrArray Ptr, _start As L
 			out_statement->AddStr(Str$(range_min))
 			out_statement->AddStr(Str$(range_max))
 		End If
+
 		Return TRUE
 	Else
 		Return FALSE
@@ -1090,10 +1077,15 @@ Function BasicSrc.tryLoadLabelledStatement(tkns As BoxedStrArray Ptr, _start As 
 		End If
 	End If
 
-	If  tryLoadVarDeclStatement(tkns, _start, _end,  out_statement) _
-			OrElse tryLoadProcDeclStatement(tkns, _start, _end,  out_statement) _
-			OrElse tryLoadCondStatement(tkns, _start, _end,  _next, out_statement) _
-	Then
+	If tryLoadVarDeclStatement(tkns, _start, _end,  out_statement) Then
+		Return TRUE
+	End If
+
+	If tryLoadProcDeclStatement(tkns, _start, _end,  out_statement) Then
+		Return TRUE
+	End If
+
+	If tryLoadCondStatement(tkns, _start, _end,  _next, out_statement) Then
 		Return TRUE
 	End If
 

@@ -13,11 +13,6 @@
 
 Const MAX_VARS_COUNT = 256
 
-Const TYPE_VOID = "VOID"
-Const TYPE_INTEGER = "INTEGER"
-Const TYPE_LONG = "LONG"
-Const TYPE_STRING = "STRING"
-Const TYPE_BOOL = "BOOL"
 
 Const ATTR_EXTERN = "e"
 Const ATTR_GLOBAL = "g"
