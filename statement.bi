@@ -64,6 +64,7 @@ Type Statement Extends IComparable
 		Declare Sub SetLabel(s As String)
 		Declare Function GetLabel() As String
 		Declare Sub AddStr(s As String)
+		Declare Sub SetStr(i As Long, s As String)
 		Declare Function GetStr(i As Long) As String
 		Declare Function CountStrs() As Long
 		Declare Sub AddMovedExpr(e As Expr Ptr)
@@ -75,6 +76,7 @@ Type Statement Extends IComparable
 		Declare Function CompareTo(p As IComparable Ptr) As Long
 
 		Declare Sub Simplify()
+	
 		Declare Function ToString() As String
 End Type
 
@@ -133,6 +135,9 @@ End Function
 
 Sub Statement.AddStr(s As String)
 	_strs->AddStr(s)
+End Sub
+Sub Statement.SetStr(i As Long, s As String)
+	_strs->SetStr(i, s)
 End Sub
 Function Statement.GetStr(i As Long) As String
 	Return _strs->GetStr(i)
@@ -270,7 +275,9 @@ Type StatementArray Extends BoxedArray
 		Declare Function LastIndexOfStatementByType(s As String) As Long
 		Declare Function tryGetRangeOfBlock(_start As Integer, ByRef out_start As Long, ByRef out_end As Long) As Long
 		Declare Sub SetMovedStatement(idx As Long, o As Statement Ptr)
-		Declare Function RemoveStatement(idx As Long) As Statement Ptr
+		Declare Function ExtractStatement(idx As Long) As Statement Ptr
+		Declare Function ExtractRemovedStatement(idx As Long) As Statement Ptr
+		Declare Sub RemoveStatement(idx As Long)
 		Declare Sub DeleteStatement(idx As Long)
 		Declare Function GetStatement(idx As Long) As Statement Ptr
 		Declare Function GetStr(idx As Long) As String
@@ -279,7 +286,7 @@ End Type
 Destructor StatementArray()
 	Dim i As Long
 	For i = 0 To _length - 1
-		If GetStatement(i) <> NULL Then  DeleteStatement(i)
+		If GetStatement(i) <> NULL Then  Delete GetStatement(i)
 	Next
 End Destructor
 
@@ -357,18 +364,27 @@ End Function
 
 Sub StatementArray.SetMovedStatement(idx As Long, o As Statement Ptr)
 	Dim o0 As Statement Ptr = GetStatement(idx)
-	Delete o0
+	If o0 <> NULL Then  Delete o0
 	SetItem(idx, o)
 End Sub
-Function StatementArray.RemoveStatement(idx As Long) As Statement Ptr
+Function StatementArray.ExtractStatement(idx As Long) As Statement Ptr
+	Return Cast(Statement Ptr, ExtractItem(idx))
 	Dim o0 As Statement Ptr = GetStatement(idx)
-	SetItem(idx, NULL)
-	Return o0
 End Function
 Sub StatementArray.DeleteStatement(idx As Long)
-	Dim o As Statement Ptr = RemoveStatement(idx)
-	Delete o
+	Dim o As Statement Ptr = ExtractStatement(idx)
+	If o <> NULL Then  Delete o
 End Sub
+Function StatementArray.ExtractRemovedStatement(idx As Long) As Statement Ptr
+	Dim o As Statement Ptr : o = ExtractStatement(idx)
+	RemoveItem(idx)
+	Return o
+End Function
+Sub StatementArray.RemoveStatement(idx As Long)
+	Dim o As Statement Ptr : o = ExtractRemovedStatement(idx)
+	If o <> NULL Then  Delete o
+End Sub
+
 
 Function StatementArray.GetStatement(idx As Long) As Statement Ptr
 	Return Cast(Statement Ptr, GetItem(idx))

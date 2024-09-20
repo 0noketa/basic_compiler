@@ -1164,6 +1164,12 @@ Function BasicSrc.tryLoadNumberedStatements(tkns As BoxedStrArray Ptr, _start As
 		_start += 1
 	End If
 
+	If _start + 1 >= _end Then
+		out_statement = NewStatement(STMT_EMPTY)
+		out_statement->SetLineNumber(line_number)
+		Return TRUE
+	End If
+
 	If tryLoadStatements(tkns, _start, _end,    out_statement) Then
 		out_statement->SetLineNumber(line_number)
 		Return TRUE
@@ -1171,6 +1177,25 @@ Function BasicSrc.tryLoadNumberedStatements(tkns As BoxedStrArray Ptr, _start As
 
 	Return FALSE
 End Function
+
+Sub RemoveEmptyStatementsFromTokens(src As BoxedStrArray Ptr)
+	Dim i As Long
+	Dim coloned As Long
+
+	i = src->Count() - 1
+	coloned = FALSE
+	While i > 2
+		If src->GetStr(i) = ":" Then
+			If coloned Then  src->RemoveBoxedStr(i)
+
+			coloned = TRUE
+		Else
+			coloned = FALSE
+		End If
+
+		i -= 1
+	Wend
+End Sub
 
 Function BasicSrc.loadLine() As Statement Ptr
 	Dim _line As BoxedStrArray Ptr
@@ -1190,15 +1215,17 @@ Function BasicSrc.loadLine() As Statement Ptr
 	End If
 
 	_line =  _src.GetTokenArrayFromLine()
+	RemoveEmptyStatementsFromTokens(_line)
 	print ";src: " + _line->Join(" ")
+
 	While _line->Count() > 0 _
 			AndAlso _line->GetStr(_line->Count() - 1) = "_"
 		_line2 = _src.GetTokenArrayFromLine()
 		print ";continues: " + _line2->Join(" ")
-		_line->SetMovedBoxedStr(_line->Count() - 1, _line2->RemoveBoxedStr(0))
+		_line->SetMovedBoxedStr(_line->Count() - 1, _line2->ExtractBoxedStr(0))
 
 		For i = 1 To _line2->Count() - 1
-			_line->AddMovedBoxedStr(_line2->RemoveBoxedStr(i))
+			_line->AddMovedBoxedStr(_line2->ExtractBoxedStr(i))
 		Next
 		Delete _line2
 	Wend
@@ -1206,7 +1233,7 @@ Function BasicSrc.loadLine() As Statement Ptr
 
 	If _line->Count() = 0 Then
 		Delete _line
-		Return NULL
+		Return NewStatement(STMT_EMPTY)
 	ElseIf tryLoadNumberedStatements(_line, 0, _line->Count(),    statements) Then
 		Delete _line
 		Return statements

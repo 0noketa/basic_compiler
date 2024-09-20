@@ -107,11 +107,13 @@ Type VarInfoArray Extends BoxedArray
 		Declare Function IndexOfVarInfo(p As VarInfo Ptr) As Long
 		Declare Function IndexOfVarInfoByName(s As String, case_sensitive As Long) As Long
 		Declare Function LastIndexOfVarInfoByName(s As String, case_sensitive As Long) As Long
-		Declare Sub SetMovedVarInfo(idx As Long, o As VarInfo Ptr)
-		Declare Function RemoveVarInfo(idx As Long, ByRef out_name As BoxedString Ptr) As VarInfo Ptr
-		Declare Sub DeleteVarInfo(idx As Long)
 		Declare Function GetVarInfo(idx As Long) As VarInfo Ptr
-		Declare Function GetName(idx As Long) As String
+		Declare Sub SetMovedVarInfo(idx As Long, o As VarInfo Ptr)
+		Declare Function ExtractVarInfo(idx As Long) As VarInfo Ptr
+		Declare Function ExtractRemovedVarInfo(idx As Long) As VarInfo Ptr
+		Declare Sub RemoveVarInfo(idx As Long)
+		Declare Sub DeleteVarInfo(idx As Long)
+		Declare Function GetVarName(idx As Long) As String
 End Type
 
 Constructor VarInfoArray()
@@ -174,23 +176,34 @@ Sub VarInfoArray.SetMovedVarInfo(idx As Long, o As VarInfo Ptr)
     _keys->SetMovedBoxedStr(idx, NewBoxedString(o->GetName()))
 	SetItem(idx, o)
 End Sub
-Function VarInfoArray.RemoveVarInfo(idx As Long, ByRef out_name As BoxedString Ptr) As VarInfo Ptr
-	Dim o0 As VarInfo Ptr = GetVarInfo(idx)
-    out_name = _keys->RemoveBoxedStr(idx)
-	SetItem(idx, NULL)
-	Return o0
-End Function
-Sub VarInfoArray.DeleteVarInfo(idx As Long)
-    Dim s As BoxedString Ptr
-	Dim o As VarInfo Ptr = RemoveVarInfo(idx, s)
+Function VarInfoArray.ExtractVarInfo(idx As Long) As VarInfo Ptr
+    Dim s As BoxedString Ptr = _keys->ExtractBoxedStr(idx)
+	Dim o As VarInfo Ptr = GetVarInfo(idx)
     Delete s
+	SetItem(idx, NULL)
+	Return o
+End Function
+Function VarInfoArray.ExtractRemovedVarInfo(idx As Long) As VarInfo Ptr
+	Dim o As VarInfo Ptr = GetVarInfo(idx)
+    _keys->RemoveBoxedStr(idx)
+	RemoveItem(idx)
+	Return o
+End Function
+Sub VarInfoArray.RemoveVarInfo(idx As Long)
+	Dim o As VarInfo Ptr = GetVarInfo(idx)
+    _keys->RemoveBoxedStr(idx)
+	RemoveItem(idx)
+	Delete o
+End Sub
+Sub VarInfoArray.DeleteVarInfo(idx As Long)
+	Dim o As VarInfo Ptr = ExtractVarInfo(idx)
 	Delete o
 End Sub
 
 Function VarInfoArray.GetVarInfo(idx As Long) As VarInfo Ptr
 	Return Cast(VarInfo Ptr, GetItem(idx))
 End Function
-Function VarInfoArray.GetName(idx As Long) As String
+Function VarInfoArray.GetVarName(idx As Long) As String
     Return _keys->GetStr(idx)
 End Function
 
@@ -212,6 +225,8 @@ Type Environment
 		Declare Destructor()
 		Declare Function CountVars() As Long
 		Declare Function CountProcs() As Long
+		Declare Function CountStatements() As Long
+		Declare Function GetStatements() As StatementArray Ptr
         Declare Function GetVarInfo(_idx As Long) As VarInfo Ptr
         Declare Function GetProcInfo(_idx As Long) As VarInfo Ptr
 		Declare Function GetVarName(_idx As Long) As String
@@ -230,14 +245,17 @@ Type Environment
 		Declare Function AttrInProc(_name As String, attr As String) As Long
 		Declare Function GetParamType(_name As String) As String
 		Declare Function GetResultType(_name As String) As String
+
 		Declare Sub AddProc(_name As String, _arg_type As String, _type As String, _attr As String)
 		Declare Sub AddVar(_name As String, _type As String, _size As Long, _lbound As Long, _attr As String)
+
 		Declare Sub AddVoidProc(_name As String)
 		Declare Sub AddIntProc(_name As String)
-		Declare Sub AddIntFunc(_name As String)
 		Declare Sub AddNullaryIntFunc(_name As String)
+		Declare Sub AddIntFunc(_name As String)
 		Declare Sub AddIntVar(_name As String)
 		Declare Sub AddIntArray(_name As String, _len As Long, _lbound As Long)
+
 		Declare Sub AddExternVoidProc(_name As String)
 		Declare Sub AddExternIntProc(_name As String)
 		Declare Sub AddExternNullaryIntFunc(_name As String)
@@ -250,15 +268,23 @@ Type Environment
 		Declare Sub AddGlobalNullaryIntFunc(_name As String)
 		Declare Sub AddGlobalIntFunc(_name As String)
 		Declare Sub AddGlobalIntVar(_name As String)
+		Declare Sub AddGlobalIntArray(_name As String, _len As Long, _lbound As Long)
+
+		Declare Sub SetExplicitLineNumbers()
+		Declare Sub ReplaceTargetLineNumbersWithRealLineNumbers(line_index As Long, stmt As Statement Ptr)
+		Declare Function FindLine(_start As Long, _target As Long) As Long
+		Declare Sub NormalizeStatements()
 End Type
 
 Constructor Environment()
 	_vars = NewVarInfoArray()
 	_procs = NewVarInfoArray()
+	_statements = NewStatementArray()
 End Constructor
 Destructor Environment()
     Delete _vars
     Delete _procs
+	Delete _statements
 End Destructor
 
 Function Environment.CountVars() As Long
@@ -266,6 +292,12 @@ Function Environment.CountVars() As Long
 End Function
 Function Environment.CountProcs() As Long
 	Return _procs->Count()
+End Function
+Function Environment.CountStatements() As Long
+	Return _statements->Count()
+End Function
+Function Environment.GetStatements() As StatementArray Ptr
+	Return _statements
 End Function
 Function Environment.GetVarInfo(_idx As Long) As VarInfo Ptr
 	Return _vars->GetVarInfo(_idx)
@@ -394,38 +426,183 @@ Sub Environment.AddIntArray(_name As String, _len As Long, _lbound As Long)
 End Sub
 
 Sub Environment.AddExternVoidProc(_name As String)
-	AddProc(_name, "", "", "e")
+	AddProc(_name, "", "", ATTR_EXTERN)
 End Sub
 Sub Environment.AddExternIntProc(_name As String)
-	AddProc(_name, TYPE_INTEGER, "", "e")
+	AddProc(_name, TYPE_INTEGER, "", ATTR_EXTERN)
 End Sub
 Sub Environment.AddExternNullaryIntFunc(_name As String)
-	AddProc(_name, "", TYPE_INTEGER, "e")
+	AddProc(_name, "", TYPE_INTEGER, ATTR_EXTERN)
 End Sub
 Sub Environment.AddExternIntFunc(_name As String)
-	AddProc(_name, TYPE_INTEGER, TYPE_INTEGER, "e")
+	AddProc(_name, TYPE_INTEGER, TYPE_INTEGER, ATTR_EXTERN)
 End Sub
 Sub Environment.AddExternIntVar(_name As String)
-	AddVar(_name, TYPE_INTEGER, -1, 0, "e")
+	AddVar(_name, TYPE_INTEGER, -1, 0, ATTR_EXTERN)
 End Sub
 Sub Environment.AddExternIntArray(_name As String, _len As Long, _lbound As Long)
-	AddVar(_name, TYPE_INTEGER, _len, _lbound, "e")
+	AddVar(_name, TYPE_INTEGER, _len, _lbound, ATTR_EXTERN)
 End Sub
 
 Sub Environment.AddGlobalVoidProc(_name As String)
-	AddProc(_name, "", "", "g")
+	AddProc(_name, "", "", ATTR_GLOBAL)
 End Sub
 Sub Environment.AddGlobalIntProc(_name As String)
-	AddProc(_name, TYPE_INTEGER, "", "g")
+	AddProc(_name, TYPE_INTEGER, "", ATTR_GLOBAL)
 End Sub
 Sub Environment.AddGlobalNullaryIntFunc(_name As String)
-	AddProc(_name, "", TYPE_INTEGER, "g")
+	AddProc(_name, "", TYPE_INTEGER, ATTR_GLOBAL)
 End Sub
 Sub Environment.AddGlobalIntFunc(_name As String)
-	AddProc(_name, TYPE_INTEGER, TYPE_INTEGER, "g")
+	AddProc(_name, TYPE_INTEGER, TYPE_INTEGER, ATTR_GLOBAL)
 End Sub
 Sub Environment.AddGlobalIntVar(_name As String)
-	AddVar(_name, TYPE_INTEGER, -1, 0, "g")
+	AddVar(_name, TYPE_INTEGER, -1, 0, ATTR_GLOBAL)
+End Sub
+Sub Environment.AddGlobalIntArray(_name As String, _len As Long, _lbound As Long)
+	AddVar(_name, TYPE_INTEGER, _len, _lbound, ATTR_GLOBAL)
+End Sub
+
+
+Sub Environment.SetExplicitLineNumbers()
+	Dim stmts As StatementArray Ptr = GetStatements()
+	Dim stmt As Statement Ptr
+	Dim i As Long
+	Dim line_number As Long
+
+	line_number = 1
+	For i = 0 To stmts->Count() - 1
+		stmt = stmts->GetStatement(i)
+		If stmt->GetLineNumber() = -1 Then
+			stmt->SetLineNumber(line_number)
+		Else
+			line_number = stmt->GetLineNumber()
+		End If
+
+		line_number += 1
+	Next
+End Sub
+
+Sub Environment.ReplaceTargetLineNumbersWithRealLineNumbers(line_index As Long, stmt As Statement Ptr)
+	Dim stmt2 As Statement Ptr
+	Dim i As Long
+
+	Select Case stmt->GetOpr()
+	Case STMT_GOTO
+		If IsNum(Asc(Mid$(stmt->GetStr(0), 1, 1))) Then
+			i = FindLine(line_index, Val(stmt->GetStr(0)))
+			If i = -1 Then
+				Print "; error: line " + stmt->GetStr(0) + " does not exist"
+				Return
+			End If
+
+			i += 1
+			stmt->SetStr(0, Str$(i))
+		End If
+	Case STMT_GOSUB
+		If IsNum(Asc(Mid$(stmt->GetStr(0), 1, 1))) Then
+			i = FindLine(line_index, Val(stmt->GetStr(0)))
+			If i = -1 Then
+				Print "; error: line " + stmt->GetStr(0) + " does not exist"
+				Return
+			End If
+
+			i += 1
+			stmt->SetStr(0, Str$(i))
+		End If
+	Case Else
+		For i = 0 To stmt->CountStatements() - 1
+			stmt2 = stmt->GetStatement(i)
+			If stmt2 = NULL Then
+				Print "; NULL stmt!"
+				Continue For
+			End If
+
+			ReplaceTargetLineNumbersWithRealLineNumbers(line_index, stmt2)
+		Next
+	End Select
+End Sub
+
+Function Environment.FindLine(_start As Long, _target As Long) As Long
+	Dim stmts As StatementArray Ptr = GetStatements()
+	Dim stmt As Statement Ptr
+	Dim i As Long
+	Dim j As Long
+	Dim line_number As Long
+
+	If _start < 0 Or _start >= stmts->Count() Then  Return -1
+
+	' SetExplicitLineNumbers()
+
+	stmt = stmts->GetStatement(_start)
+	line_number = stmt->GetLineNumber()
+
+	Print "; find: ", _target, " from:", _start, " (", line_number
+
+	If line_number < _target Then
+		Print ";  find forward"
+		For i = _start To stmts->Count() - 1
+			stmt = stmts->GetStatement(i)
+			j = stmt->GetLineNumber()
+
+			If j <> line_number Then
+				' when target does not exits and target line number points between 2 lines. return higher as target
+				If j > _target Then  Return i
+				line_number = j
+			End If
+
+			If _target = line_number Then  Return i
+
+		Print ";   .current: ", line_number
+
+			line_number += 1
+		Next
+	Else
+		Print ";  find backward"
+		For i = _start To 0 Step -1
+			stmt = stmts->GetStatement(i)
+			j = stmt->GetLineNumber()
+
+			If j <> line_number Then
+				' when target does not exits and target line number points between 2 lines. return higher as target
+				If j < _target Then  Return i + 1
+				line_number = j
+			End If
+
+			If _target = line_number Then  Return i
+		Print ";   .current: ", line_number
+
+			line_number -= 1
+		Next
+	End If
+
+	Return -1
+End Function
+
+Sub Environment.NormalizeStatements()
+	Dim stmts As StatementArray Ptr = GetStatements()
+	Dim stmt As Statement Ptr
+	Dim i As Long
+	Dim j As Long
+	Dim line_number As Long
+	Dim c As Long = 1073741824
+
+	Print "; normalize smts"
+
+	' set explicit line_numbers	
+	SetExplicitLineNumbers()
+
+	Print "; translate local line numbers"
+	For i = 0 To stmts->Count() - 1
+		stmt = stmts->GetStatement(i)
+		ReplaceTargetLineNumbersWithRealLineNumbers(i, stmt)
+	Next
+
+	Print "; translate local line numbers (step2)"
+	For i = 0 To stmts->Count() - 1
+		stmt = stmts->GetStatement(i)
+		stmt->SetLineNumber(i + 1)
+	Next
 End Sub
 
 #endif

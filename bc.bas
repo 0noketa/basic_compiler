@@ -456,9 +456,10 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 			End If
 
 			If stmt->CountStatements() >= 2 Then
-				print s + " BC_LINE_" + Str$(line_number) + ".ELSE"
+				print s + " BC_LINE_" + Str$(line_number) + "_ELSE"
 			Else
-				print s + " BC_LINE_" + Str$(line_number) + ".END"
+				' print s + " BC_LINE_" + Str$(line_number) + "_END"
+				print s + " BC_LINE_" + Str$(line_number + 1) + "  ;next"
 			End If
 
 			If tryPrintStatement(stmt->GetStatement(0),  line_number) = FALSE Then
@@ -466,8 +467,9 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 			End If
 
 			If stmt->CountStatements() >= 2 Then
-				print "jmp BC_LINE_" + Str$(line_number) + ".END"
-				print "BC_LINE_" + Str$(line_number) + ".ELSE:"
+				' print "jmp BC_LINE_" + Str$(line_number) + "_END"
+				print "jmp BC_LINE_" + Str$(line_number + 1) + "  ;next"
+				print "BC_LINE_" + Str$(line_number) + "_ELSE:"
 
 				If tryPrintStatement(stmt->GetStatement(1),  line_number) = FALSE Then
 					Return FALSE
@@ -505,7 +507,7 @@ Function BasicCompiler.tryPrintRootStatement(stmt As Statement Ptr, ByRef line_n
 	print "BC_LINE_" + Str$(line_number) + ":"
 
 	If tryPrintStatement(stmt, line_number) Then
-		print "BC_LINE_" + Str$(line_number) + ".END:"
+		' print "BC_LINE_" + Str$(line_number) + "_END:"
 		Return TRUE
 	Else
 		Return FALSE
@@ -557,14 +559,16 @@ Function BasicCompiler.tryLoadDeclsFromStatement(stmt As Statement Ptr, ByRef en
 				_ubound = Int(Val(stmt->GetStr(4)))
 				If InStr(1, attr, ATTR_EXTERN) Then
 					env->AddExternIntArray(_name, _ubound - _lbound + 1, _lbound)
+				ElseIf InStr(1, attr, ATTR_GLOBAL) Then
+					env->AddGlobalIntArray(_name, _ubound - _lbound + 1, _lbound)
 				ElseIf stmt->CountStrs() = 5 Then
 					env->AddIntArray(_name, _ubound - _lbound + 1, _lbound)
-				Else
-					Print "; unknown var decl: " + _name
 				End If
 			Else
 				If InStr(1, attr, ATTR_EXTERN) Then
 					env->AddExternIntVar(_name)
+				ElseIf InStr(1, attr, ATTR_GLOBAL) Then
+					env->AddGlobalIntVar(_name)
 				Else
 					env->AddIntVar(_name)
 				End If
@@ -596,6 +600,7 @@ Function BasicCompiler.tryLoadDeclsFromStatement(stmt As Statement Ptr, ByRef en
 	Return FALSE
 End Function
 
+
 Sub BasicCompiler.compile()
 	Dim e As Expr Ptr
 	Dim i As Long
@@ -607,7 +612,8 @@ Sub BasicCompiler.compile()
 	Dim abs_line_number As Long
 	Dim line_number As Long
 	Dim src As Statement Ptr
-	Dim prog() As Statement Ptr
+	' Dim prog() As Statement Ptr
+	Dim prog As StatementArray Ptr
 	Dim s As String
 	Dim s2 As String
 
@@ -616,25 +622,33 @@ Sub BasicCompiler.compile()
 	print "bits " + Str(int_size)
 	print "section .text"
 
-	Redim prog(0)
+	' Redim prog(0)
+	prog = vars.GetStatements()
 
 	abs_line_number = 1
 	While Not _src.AtEof()
 		Print ";line " + Str$(abs_line_number)
 		src = _src.loadLine()  ' NULLable
 
-		Redim Preserve prog(0 To abs_line_number)
-		prog(abs_line_number - 1) = src
+		' Redim Preserve prog(0 To abs_line_number)
+		' prog(abs_line_number - 1) = src
+		prog->AddMovedStatement(src)
 
 		abs_line_number += 1
 		If src <> NULL Then  Print ";line is " + src->GetOpr()
 	Wend
 
+	' as next line of last line
+	src = NewStatement(STMT_RETURN)
+	prog->AddMovedStatement(src)
+
 	Print "; ---- loaded entire source ----"
 	' close file at here
 	
-	For i = LBound(prog) To UBound(prog)
-		src = prog(i)
+	' For i = LBound(prog) To UBound(prog)
+	For i = 0 To prog->Count() - 1
+		' src = prog(i)
+		src = prog->GetStatement(i)
 
 		If src = NULL Then	
 		ElseIf tryLoadDeclsFromStatement(src, @vars) = FALSE Then
@@ -645,12 +659,20 @@ Sub BasicCompiler.compile()
 
 	Print "; ---- defined suspended definitions ----"
 
+	' error
+	vars.NormalizeStatements()
+
 	abs_line_number = 1
-	line_number = 1
-	For i = LBound(prog) To UBound(prog)
-		src = prog(i)
+	line_number = 0
+	' For i = LBound(prog) To UBound(prog)
+	For i = 0 To prog->Count() - 1
+		' src = prog(i)
+		src = prog->GetStatement(i)
 		If src <> NULL Then
-			Print "; ####src#### : " + src->ToString()
+			If src->GetOpr() <> STMT_EMPTY Then
+				Print "; ####src#### : " + src->ToString()
+			End If
+
 			If tryPrintRootStatement(src,  line_number) = FALSE Then
 				Print "; failed to print"
 				Return
@@ -710,9 +732,9 @@ Sub BasicCompiler.compile()
 	End If
 
 
-	For i = LBound(prog) To UBound(prog)
-		Delete prog(i)
-	Next
+	' For i = LBound(prog) To UBound(prog)
+	' 	Delete prog(i)
+	' Next
 End Sub
 
 
