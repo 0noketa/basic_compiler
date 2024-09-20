@@ -1,4 +1,4 @@
-Declare Sub PRINTI cdecl ()
+Extern Declare Sub PRINTI cdecl ()
 Global Dim I As Integer
 Global Declare Sub ENTRY cdecl ()
 Dim A(0 To 64) As Integer

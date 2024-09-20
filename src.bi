@@ -1040,7 +1040,7 @@ Function BasicSrc.tryLoadLabelledStatement(tkns As BoxedStrArray Ptr, _start As 
 	' *LABEL1 LET I = 0
 	If _start + 1 < _end _
 			AndAlso tkns->GetStr(_start) = "*" _
-			And IsNam((tkns->GetBoxedStr(_start + 1))->ChrCodeAt(1)) _
+			And IsNamHead((tkns->GetBoxedStr(_start + 1))->ChrCodeAt(1)) _
 	Then
 		label_name = tkns->GetStr(_start + 1)
 
@@ -1062,7 +1062,7 @@ Function BasicSrc.tryLoadLabelledStatement(tkns As BoxedStrArray Ptr, _start As 
 	' (LABEL1) LET I = 0
 	If _start + 3 < _end _
 			AndAlso tkns->GetStr(_start) = "(" _
-			And IsNam((tkns->GetBoxedStr(_start + 1))->ChrCodeAt(1)) _
+			And IsNamHead((tkns->GetBoxedStr(_start + 1))->ChrCodeAt(1)) _
 			And tkns->GetStr(_start + 2) = ")" _
 	Then
 		label_name = tkns->GetStr(_start + 1)
@@ -1145,7 +1145,7 @@ Function BasicSrc.tryLoadStatements(tkns As BoxedStrArray Ptr, _start As Long, _
 	Return FALSE
 End Function
 
-' with _line number
+' with line_number
 Function BasicSrc.tryLoadNumberedStatements(tkns As BoxedStrArray Ptr, _start As Long, _end As Long, ByRef out_statement As Statement Ptr) As Long
 	Dim line_number As Long = -1
 	Dim _next As Long
@@ -1164,13 +1164,13 @@ Function BasicSrc.tryLoadNumberedStatements(tkns As BoxedStrArray Ptr, _start As
 		_start += 1
 	End If
 
-	If _start + 1 >= _end Then
-		out_statement = NewStatement(STMT_EMPTY)
+	If tryLoadStatements(tkns, _start, _end,    out_statement) Then
 		out_statement->SetLineNumber(line_number)
 		Return TRUE
 	End If
 
-	If tryLoadStatements(tkns, _start, _end,    out_statement) Then
+	If _start + 1 >= _end Then
+		out_statement = NewStatement(STMT_EMPTY)
 		out_statement->SetLineNumber(line_number)
 		Return TRUE
 	End If
