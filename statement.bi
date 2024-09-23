@@ -1,6 +1,7 @@
 #ifndef statement__sbp
 #define statement__sbp
 
+#include once "ab.bi"
 #include "comparable.bi"
 #include "array.bi"
 #include "expr.bi"
@@ -9,6 +10,10 @@ Const STMT_EMPTY = "EMPTY"
 Const STMT_STATEMENTS = "STATEMENTS"
 Const STMT_LABEL_OR_CALL = "MAYBE.LABEL_CALL"
 Const STMT_LABEL = "LABEL"
+Const STMT_OPTION = "OPTION"
+Const STMT_PROGRAM = "PROGRAM"
+Const STMT_CHAIN = "CHAIN"
+Const STMT_EXPR = "EXPR"
 Const STMT_LET = "LET"
 Const STMT_GOTO = "GOTO"
 Const STMT_GOSUB = "GOSUB"

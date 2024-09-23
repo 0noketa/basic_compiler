@@ -31,8 +31,8 @@ int main(){
     int I, J, it;
 	I = f0();
     J = f1(123) + f2(f1(88) + 1);
-    it = println(I);
-    it = println(J);
+    println(I);
+    println(J);
 
 	return 0;
 }

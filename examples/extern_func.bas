@@ -1,15 +1,15 @@
 
-Declare Sub println(n)
-Declare Function f0()
-Declare Function f1(n)
-Declare Function f2(n As Integer) As Integer
-Global ENTRY
+Declare External Sub println(n)
+Declare External Function f0()
+Declare External Function f1(n)
+Declare External Function f2(n As Integer) As Integer
+Declare Global Sub ENTRY
 
 
 ENTRY:
     I = f0()
     J = f1(123) + f2(f1(88) + 1)
-    call println(I)
+    println(I)
     call println(J)
     Return
 

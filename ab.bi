@@ -1,6 +1,9 @@
 #ifndef __ab4_bi__
 #define __ab4_bi__
 
+' default in lang fb
+' Option ByVal
+
 Type BytePtr As Byte Ptr
 Type LPCSTR As ZString Ptr
 Type DWord As ULong

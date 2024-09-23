@@ -2,6 +2,7 @@
 #define comparable__sbp
 
 #include once "crt.bi"
+#include once "ab.bi"
 
 
 Type IComparable Extends Object

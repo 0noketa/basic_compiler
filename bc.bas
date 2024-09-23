@@ -116,7 +116,20 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 
 	If e->GetOpr() = EXPR_APPLY Then
 		s = e->GetVal()
-		If UCase(s) = "LEN" Then
+		If UCase(s) = "SIZE" Then
+			If e->GetArgc() = 0 Then
+				print "; no arg for " + s
+				Return
+			End If
+
+			e2 = e->GetArgv(0)
+			s = e2->GetVal()
+			If vars.IsArray(s) Then
+				print "push " + Str(vars.GetArrayLength(s)) + "  ; SIZE("+ s +")"
+			Else
+				print "push 1"
+			End If
+		ElseIf UCase(s) = "LEN" Then
 			If e->GetArgc() = 0 Then
 				print "; no arg for " + s
 				Return
@@ -157,7 +170,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			End If
 		ELseIf vars.IsProc(s) Then
 			If e->GetArgc() > 0 Then
-				If vars.GetParamType(s) = "" Then
+				If vars.GetParamType(s) = TYPE_VOID Then
 					print "; no param function was called with args"
 					Return
 				End If
@@ -413,11 +426,21 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 			Return TRUE
 		Case STMT_GOSUB
 			s = stmt->GetStr(0)
+
+			For i = 0 To stmt->CountExprs() - 1
+				printExpr(stmt->GetExpr(i))
+			Next
+
 			If IsNum(Asc(Mid$(s, 1, 1))) Then
 				print "call BC_LINE_" + s
 			Else
 				print "call " + s
 			End If
+
+			For i = 0 To stmt->CountExprs() - 1
+				Print "pop " + registerName("d")
+			Next
+
 			Return TRUE
 		Case STMT_RETURN
 			print "ret"

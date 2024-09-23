@@ -4,7 +4,8 @@
 
 ' CLI-like Array
 
-#include "comparable.bi"
+#include once "ab.bi"
+#include once "comparable.bi"
 
 
 Type BoxedArray Extends Object

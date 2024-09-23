@@ -191,7 +191,7 @@ Function BasicSrc.tryLoadExprVal(tkns As BoxedStrArray Ptr, _start As Long, _end
 		ElseIf tkns->GetStr(_start + 2) = ")" Then
 			Print ";    done as emply args"
 			out_next = _start + 3
-			out_expr = e2
+			out_expr = e
 			Return TRUE
 		End If
 
@@ -464,8 +464,18 @@ Function BasicSrc.trySkipAndLoadAs(tkns As BoxedStrArray Ptr, ByRef _start As Lo
 	If trySkipKeyword(tkns, _start, _end, "AS") Then
 		If _start < _end Then
 			out_type = UCase(tkns->GetStr(_start))
+			_start += 1
 			Return TRUE
+		Else
+			Print "; error: ends with AS is unknown syntax"
+			Return FALSE
 		End If
+	End If
+
+	If _start < _end Then
+		Print "; no AS just " + tkns->GetStr(_start)
+	Else
+		Print "; no AS"
 	End If
 
 	Return FALSE
@@ -475,6 +485,7 @@ Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As 
 	Dim isDecl As Long
 	Dim procType As String
 	Dim paramName As String
+	Dim paramPassType As String
 	Dim paramType As String
 	Dim resultType As String
 	Dim attr As String
@@ -486,6 +497,9 @@ Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As 
 	attr = ""
 
 	If trySkipKeyword(tkns, _start, _end, "EXTERN") Then
+		Print "  ; extern"
+		attr += "e"
+	ElseIf trySkipKeyword(tkns, _start, _end, "EXTERNAL") Then
 		Print "  ; extern"
 		attr += "e"
 	ElseIf trySkipKeyword(tkns, _start, _end, "GLOBAL") Then
@@ -501,6 +515,10 @@ Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As 
 	End If
 
 	If trySkipKeyword(tkns, _start, _end, "EXTERN") Then
+		Print "  ; extern2"
+		If attr <> "" Then  Print "; duplicated access class declaration"
+		attr += "e"
+	ElseIf trySkipKeyword(tkns, _start, _end, "EXTERNAL") Then
 		Print "  ; extern2"
 		If attr <> "" Then  Print "; duplicated access class declaration"
 		attr += "e"
@@ -532,13 +550,17 @@ Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As 
 	End If
 
 	If trySkipKeyword(tkns, _start, _end, "(") Then
-		If trySkipKeyword(tkns, _start, _end, ")") = FALSE Then
+		If trySkipKeyword(tkns, _start, _end, ")") Then
+		Else
 			paramType = TYPE_INTEGER
 
 			If trySkipKeyword(tkns, _start, _end, "BYVAL") Then
+				paramPassType = "BYVAL"
 			ElseIf trySkipKeyword(tkns, _start, _end, "BYREF") Then
-				Print "; decl of procedure with ByRef params are not implemented"
-				Return FALSE
+				paramPassType = "BYREF"
+				Print "; ByRef is not implemented"
+			Else
+				paramPassType = "BYVAL"
 			End If
 
 			paramName = tkns->GetStr(_start)
@@ -555,11 +577,11 @@ Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As 
 				paramType = s
 			End If
 
-			If trySkipKeyword(tkns, _start, _end, ",") = FALSE Then
+			If trySkipKeyword(tkns, _start, _end, ",") <> FALSE Then
 				Print "; decl of procedure with >=2 params are not implemented"
 				Return FALSE
 			ElseIf trySkipKeyword(tkns, _start, _end, ")") = FALSE Then
-				Print "; decl with unknown element " + s
+				Print "; decl with unknown element instead of left blacked: " + s
 				Return FALSE
 			End If
 		End If
@@ -622,12 +644,17 @@ Function BasicSrc.tryLoadVarDeclStatement(tkns As BoxedStrArray Ptr, _start As L
 	ElseIf trySkipKeyword(tkns, _start, _end, "EXTERN") Then
 		attr += ATTR_EXTERN
 		trySkipKeyword(tkns, _start, _end, "DIM")
+	ElseIf trySkipKeyword(tkns, _start, _end, "EXTERNAL") Then
+		attr += ATTR_EXTERN
+		trySkipKeyword(tkns, _start, _end, "DIM")
 	ElseIf trySkipKeyword(tkns, _start, _end, "LOCAL") Then
 		trySkipKeyword(tkns, _start, _end, "DIM")
 	ElseIf trySkipKeyword(tkns, _start, _end, "DIM") Then
 		If trySkipKeyword(tkns, _start, _end, "GLOBAL") Then
 			attr += ATTR_GLOBAL
 		ElseIf trySkipKeyword(tkns, _start, _end, "EXTERN") Then
+			attr += ATTR_EXTERN
+		ElseIf trySkipKeyword(tkns, _start, _end, "EXTERNAL") Then
 			attr += ATTR_EXTERN
 		ElseIf trySkipKeyword(tkns, _start, _end, "LOCAL") Then
 		End If
@@ -744,6 +771,21 @@ Function BasicSrc.tryLoadLetStatement(tkns As BoxedStrArray Ptr, _start As Long,
 
 	If tryLoadExprAssignment(tkns, _start, _end,   out_next, e) Then
 		out_statement = NewStatement(STMT_LET)
+		out_statement->AddMovedExpr(e)
+		Return TRUE
+	ElseIf tryLoadExpr(tkns, _start, _end,   out_next, e) Then
+		If e->GetOpr() = EXPR_APPLY Then
+			out_statement = NewStatement(STMT_GOSUB)
+			out_statement->AddStr(e->GetVal())
+			If e->GetArgc() > 0 Then
+				out_statement->AddMovedExpr((e->GetArgv(0))->Clone())
+			End If
+	
+			Delete e
+			Return TRUE
+		End If
+
+		out_statement = NewStatement(STMT_EXPR)
 		out_statement->AddMovedExpr(e)
 		Return TRUE
 	Else
@@ -872,6 +914,29 @@ Function BasicSrc.tryLoadCondStatement(tkns As BoxedStrArray Ptr, _start As Long
 		If tryLoadLabelName(tkns, _start + 1, _end,    i, s) Then
 			out_statement = NewStatement(STMT_GOSUB)
 			out_statement->AddStr(s)
+
+			_start += 2
+			If trySkipKeyword(tkns, _start, _end, "(") Then
+				If trySkipKeyword(tkns, _start, _end, ")") Then
+				ElseIf tryLoadExpr(tkns, _start, _end,   _start2, _expr) Then
+					out_statement->AddMovedExpr(_expr)
+
+					If trySkipKeyword(tkns, _start2, _end, ")") = FALSE Then
+						Print "; error. arguments does not end with valid expression: " + s
+
+						Delete out_statement
+						out_statement = NULL
+						Return FALSE
+					End If
+				Else
+					Print "; error. call with unknown arguments: " + s
+
+					Delete out_statement
+					out_statement = NULL
+					Return FALSE
+				End If
+			End If
+
 			Return TRUE
 		End If
 
@@ -923,6 +988,26 @@ Function BasicSrc.tryLoadCondStatement(tkns As BoxedStrArray Ptr, _start As Long
 				End If
 			End If
 		End If
+		Return TRUE
+	End If
+
+	If UCase(s) = "ENDSUB" Then
+		out_statement = NewStatement(STMT_END_SUB)
+		Return TRUE
+	ElseIf UCase(s) = "ENDFUNCTION" Then
+		out_statement = NewStatement(STMT_END_FUNCTION)
+		Return TRUE
+	ElseIf UCase(s) = "ENDWHILE" Or UCase(s) = "WEND" Then
+		out_statement = NewStatement(STMT_END_WHILE)
+		Return TRUE
+	ElseIf UCase(s) = "ENDFOR" Or UCase(s) = "NEXT" Then
+		out_statement = NewStatement(STMT_END_FOR)
+		Return TRUE
+	ElseIf UCase(s) = "ENDDO" Then
+		out_statement = NewStatement(STMT_END_DO)
+		Return TRUE
+	ElseIf UCase(s) = "ENDIF" Then
+		out_statement = NewStatement(STMT_END_IF)
 		Return TRUE
 	End If
 
@@ -991,6 +1076,14 @@ Function BasicSrc.tryLoadCondStatement(tkns As BoxedStrArray Ptr, _start As Long
 				out_statement->AddMovedExpr(_expr)
 			End If
 		End If
+		Return TRUE
+	End If
+
+	If UCase(s) = "OPTION" Then
+		out_statement = NewStatement(STMT_OPTION)
+		For i = _start + 1 To _end - 1
+			out_statement->AddStr(UCase(tkns->GetStr(i)))
+		Next
 		Return TRUE
 	End If
 

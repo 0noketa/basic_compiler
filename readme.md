@@ -18,6 +18,7 @@ IF I = 2 THEN _
 LABEL0:
 (LABEL1)
 *LABEL2
+LABEL LABEL3
 ```
 
 ### useful line numbers
@@ -134,3 +135,4 @@ by priority.
 * TYPE/CLASS.
 * SELECT-CASE.
 * FreeBASIC-like EXTERN for separated declarations of public elements.
+* DEF/DEF-PROC(equals to SUB with optional result)
