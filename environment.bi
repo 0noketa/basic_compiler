@@ -23,17 +23,23 @@ Type VarInfo Extends IComparable
 	Protected:
 		_name As String
 		_type As String
-		_param_type As String
+		_param_types As BoxedStrArray Ptr
+		_param_names As BoxedStrArray Ptr
 		_size As Long
 		_lbound As Long
 		_attr As String
 	Public:
+		Declare Constructor()
+		Declare Destructor()
 		Declare Function GetName() As String
 		Declare Sub SetName(s As String)
 		Declare Function GetType() As String
 		Declare Sub SetType(s As String)
-		Declare Function GetParamType() As String
-		Declare Sub SetParamType(s As String)
+		Declare Function CountParams() As Long
+		Declare Function GetParamName(idx As Long) As String
+		Declare Function GetParamType(idx As Long) As String
+		Declare Function GetParamTypeByName(_name As String) As String
+		Declare Sub AddParam(_name As String, _type As String)
 		Declare Function GetSize() As Long
 		Declare Sub SetSize(s As Long)
 		Declare Function GetLBound() As Long
@@ -42,6 +48,15 @@ Type VarInfo Extends IComparable
 		Declare Sub SetAttr(s As String)
         Declare Function CompareTo(p As IComparable Ptr) As Long
 End Type
+
+Constructor VarInfo()
+	_param_names = NewBoxedStrArray()
+	_param_types = NewBoxedStrArray()
+End Constructor
+Destructor VarInfo()
+	Delete _param_names
+	Delete _param_types
+End Destructor
 
 Function VarInfo.GetName() As String
 	Return _name
@@ -55,11 +70,25 @@ End Function
 Sub VarInfo.SetType(s As String)
 	_type = s
 End Sub
-Function VarInfo.GetParamType() As String
-	Return _param_type
+Function VarInfo.CountParams() As Long
+	Return _param_names->Count()
 End Function
-Sub VarInfo.SetParamType(s As String)
-	_param_type = s
+Function VarInfo.GetParamName(idx As Long) As String
+	If idx < 0 Or idx >= _param_names->Count() Then  Return "<error_NAME>"
+	Return _param_names->GetStr(idx)
+End Function
+Function VarInfo.GetParamType(idx As Long) As String
+	If idx < 0 Or idx >= _param_types->Count() Then  Return TYPE_VOID
+	Return _param_types->GetStr(idx)
+End Function
+Function VarInfo.GetParamTypeByName(_name As String) As String
+	Dim idx As Long = _param_names->IndexOfStr(_name)
+	If idx = -1 Then  Return TYPE_VOID
+	Return GetParamType(idx)
+End Function
+Sub VarInfo.AddParam(_name As String, _type As String)
+	_param_names->AddStr(_name)
+	_param_types->AddStr(_type)
 End Sub
 Function VarInfo.GetSize() As Long
 	Return _size
@@ -243,30 +272,23 @@ Type Environment
 		Declare Function IsArray(_name As String) As Long
 		Declare Function AttrInVar(_name As String, attr As String) As Long
 		Declare Function AttrInProc(_name As String, attr As String) As Long
-		Declare Function GetParamType(_name As String) As String
+		Declare Function CountParams(proc_name As String) As Long
+		Declare Function GetParamName(proc_name As String, idx As Long) As String
+		Declare Function GetParamType(proc_name As String, idx As Long) As String
 		Declare Function GetResultType(_name As String) As String
 
-		Declare Sub AddProc(_name As String, _arg_type As String, _type As String, _attr As String)
+		Declare Sub AddProc(_name As String, _params As BoxedStrArray Ptr, _type As String, _attr As String)
 		Declare Sub AddVar(_name As String, _type As String, _size As Long, _lbound As Long, _attr As String)
 
-		Declare Sub AddVoidProc(_name As String)
-		Declare Sub AddIntProc(_name As String)
-		Declare Sub AddNullaryIntFunc(_name As String)
-		Declare Sub AddIntFunc(_name As String)
+		Declare Sub AddLocalProc(_name As String, _params As BoxedStrArray Ptr, _result_type As String)
 		Declare Sub AddIntVar(_name As String)
 		Declare Sub AddIntArray(_name As String, _len As Long, _lbound As Long)
 
-		Declare Sub AddExternVoidProc(_name As String)
-		Declare Sub AddExternIntProc(_name As String)
-		Declare Sub AddExternNullaryIntFunc(_name As String)
-		Declare Sub AddExternIntFunc(_name As String)
+		Declare Sub AddExternProc(_name As String, _params As BoxedStrArray Ptr, _result_type As String)
 		Declare Sub AddExternIntVar(_name As String)
 		Declare Sub AddExternIntArray(_name As String, _len As Long, _lbound As Long)
 
-		Declare Sub AddGlobalVoidProc(_name As String)
-		Declare Sub AddGlobalIntProc(_name As String)
-		Declare Sub AddGlobalNullaryIntFunc(_name As String)
-		Declare Sub AddGlobalIntFunc(_name As String)
+		Declare Sub AddGlobalProc(_name As String, _params As BoxedStrArray Ptr, _result_type As String)
 		Declare Sub AddGlobalIntVar(_name As String)
 		Declare Sub AddGlobalIntArray(_name As String, _len As Long, _lbound As Long)
 
@@ -361,26 +383,48 @@ Function Environment.AttrInProc(_name As String, attr As String) As Long
 
 	Return (InStr(1, GetProcInfo(i)->GetAttr(), attr) <> 0)
 End Function
-Function Environment.GetParamType(_name As String) As String
+Function Environment.CountParams(_name As String) As Long
 	Dim i As Long : i = GetProcIndex(_name)
-	If i = -1 Then  Return "error_type"
+	If i = -1 Then  Return 0
 
-	Return GetProcInfo(i)->GetParamType()
+	Return GetProcInfo(i)->CountParams()
+End Function
+Function Environment.GetParamName(_name As String, idx As Long) As String
+	Dim i As Long : i = GetProcIndex(_name)
+	If i = -1 Then  Return "<error_name>"
+
+	Return GetProcInfo(i)->GetParamName(idx)
+End Function
+Function Environment.GetParamType(_name As String, idx As Long) As String
+	Dim i As Long : i = GetProcIndex(_name)
+	If i = -1 Then  Return "<error_type>"
+
+	Return GetProcInfo(i)->GetParamType(idx)
 End Function
 Function Environment.GetResultType(_name As String) As String
 	Dim i As Long : i = GetProcIndex(_name)
-	If i = -1 Then  Return "error_type"
+	If i = -1 Then  Return "<error_type>"
 
 	Return GetProcInfo(i)->GetType()
 End Function
-Sub Environment.AddProc(_name As String, _arg_type As String, _type As String, _attr As String)
+Sub Environment.AddProc(_name As String, _params As BoxedStrArray Ptr, _type As String, _attr As String)
 	If IsVarOrProc(_name) Then  Exit Sub
+
+	Dim param_name As String
+	Dim param_type As String
+	Dim i As Long
 
 	Dim info As VarInfo Ptr
 	If _procs->Count() < MAX_VARS_COUNT Then
 		info = NewVarInfo()
 		info->SetName(_name)
-		info->SetParamType(_arg_type)
+		If _params <> NULL Then
+			For i = 0 To _params->Count() - 1 Step 2
+				param_name = _params->GetStr(i)
+				param_type = _params->GetStr(i + 1)
+				info->AddParam(param_name, param_type)
+			Next
+		End If
 		info->SetType(_type)
 		info->SetSize(1)
 		info->SetLBound(0)
@@ -396,7 +440,6 @@ Sub Environment.AddVar(_name As String, _type As String, _size As Long, _lbound 
 	If _vars->Count() < MAX_VARS_COUNT Then
 		info = NewVarInfo()
 		info->SetName(_name)
-		info->SetParamType("")
 		info->SetType(_type)
 		info->SetSize(_size)
 		info->SetLBound(_lbound)
@@ -406,17 +449,8 @@ Sub Environment.AddVar(_name As String, _type As String, _size As Long, _lbound 
 	End If
 End Sub
 
-Sub Environment.AddVoidProc(_name As String)
-	AddProc(_name, "", "", "")
-End Sub
-Sub Environment.AddIntProc(_name As String)
-	AddProc(_name, TYPE_INTEGER, "", "")
-End Sub
-Sub Environment.AddNullaryIntFunc(_name As String)
-	AddProc(_name, "", TYPE_INTEGER, "")
-End Sub
-Sub Environment.AddIntFunc(_name As String)
-	AddProc(_name, TYPE_INTEGER, TYPE_INTEGER, "")
+Sub Environment.AddLocalProc(_name As String, _params As BoxedStrArray Ptr, _result_type As String)
+	AddProc(_name, _params, _result_type, "")
 End Sub
 Sub Environment.AddIntVar(_name As String)
 	AddVar(_name, TYPE_INTEGER, -1, 0, "")
@@ -425,17 +459,8 @@ Sub Environment.AddIntArray(_name As String, _len As Long, _lbound As Long)
 	AddVar(_name, TYPE_INTEGER, _len, _lbound, "")
 End Sub
 
-Sub Environment.AddExternVoidProc(_name As String)
-	AddProc(_name, "", "", ATTR_EXTERN)
-End Sub
-Sub Environment.AddExternIntProc(_name As String)
-	AddProc(_name, TYPE_INTEGER, "", ATTR_EXTERN)
-End Sub
-Sub Environment.AddExternNullaryIntFunc(_name As String)
-	AddProc(_name, "", TYPE_INTEGER, ATTR_EXTERN)
-End Sub
-Sub Environment.AddExternIntFunc(_name As String)
-	AddProc(_name, TYPE_INTEGER, TYPE_INTEGER, ATTR_EXTERN)
+Sub Environment.AddExternProc(_name As String, _params As BoxedStrArray Ptr, _result_type As String)
+	AddProc(_name, _params, _result_type, ATTR_EXTERN)
 End Sub
 Sub Environment.AddExternIntVar(_name As String)
 	AddVar(_name, TYPE_INTEGER, -1, 0, ATTR_EXTERN)
@@ -444,17 +469,8 @@ Sub Environment.AddExternIntArray(_name As String, _len As Long, _lbound As Long
 	AddVar(_name, TYPE_INTEGER, _len, _lbound, ATTR_EXTERN)
 End Sub
 
-Sub Environment.AddGlobalVoidProc(_name As String)
-	AddProc(_name, "", "", ATTR_GLOBAL)
-End Sub
-Sub Environment.AddGlobalIntProc(_name As String)
-	AddProc(_name, TYPE_INTEGER, "", ATTR_GLOBAL)
-End Sub
-Sub Environment.AddGlobalNullaryIntFunc(_name As String)
-	AddProc(_name, "", TYPE_INTEGER, ATTR_GLOBAL)
-End Sub
-Sub Environment.AddGlobalIntFunc(_name As String)
-	AddProc(_name, TYPE_INTEGER, TYPE_INTEGER, ATTR_GLOBAL)
+Sub Environment.AddGlobalProc(_name As String, _params As BoxedStrArray Ptr, _result_type As String)
+	AddProc(_name, _params, _result_type, ATTR_GLOBAL)
 End Sub
 Sub Environment.AddGlobalIntVar(_name As String)
 	AddVar(_name, TYPE_INTEGER, -1, 0, ATTR_GLOBAL)
@@ -604,5 +620,8 @@ Sub Environment.NormalizeStatements()
 		stmt->SetLineNumber(i + 1)
 	Next
 End Sub
+
+
+
 
 #endif

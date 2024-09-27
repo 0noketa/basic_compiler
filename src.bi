@@ -22,7 +22,7 @@ Type BasicSrc
 		Declare Constructor()
 		Declare Destructor()
 		Declare Sub Init( _name As String )
-		Declare Function tryLoadArgs(tkns As BoxedStrArray Ptr, _start As Long, _end As Long, ByRef out_next As Long, ByRef out_expr As Expr Ptr) As Long
+		Declare Function tryLoadArgs(tkns As BoxedStrArray Ptr, _start As Long, _end As Long, ByRef out_next As Long, ByRef _expr As Expr Ptr) As Long
 		Declare Function tryLoadExprVal(tkns As BoxedStrArray Ptr, _start As Long, _end As Long, ByRef out_next As Long, ByRef out_expr As Expr Ptr) As Long
 		Declare Function tryLoadExprMul(tkns As BoxedStrArray Ptr, _start As Long, _end As Long, ByRef out_next As Long, ByRef out_expr As Expr Ptr) As Long
 		Declare Function tryLoadExprAdd(tkns As BoxedStrArray Ptr, _start As Long, _end As Long, ByRef out_next As Long, ByRef out_expr As Expr Ptr) As Long
@@ -88,45 +88,50 @@ Destructor BasicSrc()
 	If lines_nums <> NULL Then Deallocate(lines_nums)
 End Destructor
 
-' legacy stub
-Function BasicSrc.tryLoadArgs(tkns As BoxedStrArray Ptr, _start As Long, _end As Long, ByRef out_next As Long, ByRef out_expr As Expr Ptr) As Long
+' _start: next to "("
+Function BasicSrc.tryLoadArgs(tkns As BoxedStrArray Ptr, _start As Long, _end As Long, ByRef out_next As Long, ByRef _expr As Expr Ptr) As Long
 	Dim e As EXpr Ptr
-	Dim e2 As EXpr Ptr
 	Dim s As String
 	Dim i As Long
 	Dim j As Long
 
 	out_next = _start
-	out_expr = NULL
-	If _start + 1 >= _end Then  Return FALSE
-	If tkns->GetStr(_start + 1) = ")" Then  Return FALSE
+	If _start >= _end Then  Return FALSE
 
-	e = NewExpr("args")
+	If tkns->GetStr(_start) <> "(" Then  Return FALSE
 
-	i = 0
-	Do
-		i += 1
-		If tryLoadExpr(tkns, i, _end, j, e2) = FALSE Then
-			Delete e
-			Return FALSE
-		End If
-
-		e->AddArg(e2)
-		i = j
-		If i >= _end Then
-			Delete e
-			Return FALSE
-		End If
-	Loop While tkns->GetStr(i) = ","
-
-	s = tkns->GetStr(i)
-	If s <> ")" Then
-		Delete e
-		Return FALSE
-	Else
-		out_next = i + 1
-		out_expr = e
+	If tkns->GetStr(_start + 1) = ")" Then
+		out_next = _start + 2
+		Return TRUE
 	End If
+
+	i = _start + 1
+	Print "; arg parse: ", _start, _end
+	Do
+		Print ";   at ", i
+		If tryLoadExpr(tkns, i, _end,  j, e) = FALSE Then
+			Return FALSE
+		End If
+		Print ";   .. ", j
+	
+		_expr->AddArg(e)
+		i = j
+
+		If i >= _end Then
+			Return FALSE
+		End If
+
+		If tkns->GetStr(i) = ")" Then
+			out_next = i + 1
+			Return TRUE
+		ElseIf tkns->GetStr(i) = "," Then
+			i += 1
+		Else
+			Return FALSE
+		End If
+	Loop
+
+	Return FALSE
 End Function
 
 ' todo: split into loadVal and loadApply to accept (*(funcs + 1))()"
@@ -172,49 +177,18 @@ Function BasicSrc.tryLoadExprVal(tkns As BoxedStrArray Ptr, _start As Long, _end
 		e = NewExpr(EXPR_VAL)
 		e->SetVal(s)
 
-		If _start + 1 >= _end _
-			OrElse tkns->GetStr(_start + 1) <> "(" _
-		Then
+		If tryLoadArgs(tkns, _start + 1, _end,  i, e) Then
+			e->SetOpr(EXPR_APPLY)
+			Print "; apply in expr: " + s + " argc:" + Str$(e->GetArgc())
+			out_next = i
+			out_expr = e
+			Return TRUE
+		Else
 			out_next = _start + 1
 			out_expr = e
 			Print "; var in expr: " + s
 			Return TRUE
 		End If
-
-		e->SetOpr(EXPR_APPLY)
-		Print "; maybe apply in expr: " + s
-
-		If _start + 2 >= _end Then
-			Print ";    lack of bracket"
-			Delete e
-			Return FALSE
-		ElseIf tkns->GetStr(_start + 2) = ")" Then
-			Print ";    done as emply args"
-			out_next = _start + 3
-			out_expr = e
-			Return TRUE
-		End If
-
-		If tryLoadExpr(tkns, _start + 2, _end,    i, e2) = FALSE Then
-			Print ";    failed to parse args"
-			Delete e
-			Return FALSE
-		End If
-
-		e->AddArg(e2)
-
-		If i >= _end _
-			OrElse tkns->GetStr(i) <> ")" _
-		Then
-			Print ";    multiple arg, or unknown element in args"
-			Delete e
-			Return FALSE
-		End If
-
-		out_next = i + 1
-		out_expr = e
-			Print ";    done as apply in expr: " + s
-		Return TRUE
 	End If
 
 	Return FALSE
@@ -484,16 +458,20 @@ End Function
 Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As Long, _end As Long, ByRef out_statement As Statement Ptr) As Long
 	Dim isDecl As Long
 	Dim procType As String
-	Dim paramName As String
+	Dim _params As BoxedStrArray Ptr
 	Dim paramPassType As String
+	Dim paramName As String
 	Dim paramType As String
 	Dim resultType As String
 	Dim attr As String
 	Dim s As String
+	Dim i As Long
 	Dim _name As String
 
 	If _start + 1 >= _end Then  Return FALSE
 
+	_params = NULL
+	resultType = TYPE_VOID
 	attr = ""
 
 	If trySkipKeyword(tkns, _start, _end, "EXTERN") Then
@@ -530,11 +508,9 @@ Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As 
 
 	If trySkipKeyword(tkns, _start, _end, "SUB") Then
 		procType = "SUB"
-		paramType = TYPE_VOID
 		resultType = TYPE_VOID
 	ElseIf trySkipKeyword(tkns, _start, _end, "FUNCTION") Then
 		procType = "FUNCTION"
-		paramType = TYPE_VOID
 		resultType = TYPE_INTEGER
 	Else
 		If isDecl <> FALSE Then  Print "; declaration of unknown element " + s
@@ -550,40 +526,47 @@ Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As 
 	End If
 
 	If trySkipKeyword(tkns, _start, _end, "(") Then
-		If trySkipKeyword(tkns, _start, _end, ")") Then
-		Else
-			paramType = TYPE_INTEGER
+		If trySkipKeyword(tkns, _start, _end, ")") = FALSE Then
+			_params = NewBoxedStrArray()
 
-			If trySkipKeyword(tkns, _start, _end, "BYVAL") Then
+			Do
 				paramPassType = "BYVAL"
-			ElseIf trySkipKeyword(tkns, _start, _end, "BYREF") Then
-				paramPassType = "BYREF"
-				Print "; ByRef is not implemented"
-			Else
-				paramPassType = "BYVAL"
-			End If
+				paramName = "<anonymous>"
+				paramType = TYPE_INTEGER
 
-			paramName = tkns->GetStr(_start)
-			_start += 1
-
-			If trySkipAndLoadAs(tkns, _start, _end,  s) Then
-				If s = TYPE_LONG Then  s = TYPE_INTEGER
-
-				If s <> TYPE_INTEGER Then
-					Print "; decl of procedure with non integer/log params are not implemented"
-					Return FALSE
+				If trySkipKeyword(tkns, _start, _end, "BYVAL") Then
+					paramPassType = "BYVAL"
+				ElseIf trySkipKeyword(tkns, _start, _end, "BYREF") Then
+					paramPassType = "BYREF"
+					Print "; ByRef is not implemented"
+				Else
+					paramPassType = "BYVAL"
 				End If
 
-				paramType = s
-			End If
+				paramName = tkns->GetStr(_start)
+				_start += 1
 
-			If trySkipKeyword(tkns, _start, _end, ",") <> FALSE Then
-				Print "; decl of procedure with >=2 params are not implemented"
-				Return FALSE
-			ElseIf trySkipKeyword(tkns, _start, _end, ")") = FALSE Then
-				Print "; decl with unknown element instead of left blacked: " + s
-				Return FALSE
-			End If
+				If trySkipAndLoadAs(tkns, _start, _end,  s) Then
+					If s = TYPE_LONG Then  s = TYPE_INTEGER
+
+					If s <> TYPE_INTEGER Then
+						Print "; decl of procedure with non integer/log params are not implemented"
+						Return FALSE
+					End If
+
+					paramType = s
+				End If
+
+				_params->AddStr(paramName)
+				_params->AddStr(paramType)
+
+				If trySkipKeyword(tkns, _start, _end, ",") Then
+				ElseIf trySkipKeyword(tkns, _start, _end, ")") Then
+					Exit Do
+				Else
+					Print "; error. unknown token in params of proc decl: " + tkns->GetStr(_start)
+				End If
+			Loop
 		End If
 
 		If trySkipAndLoadAs(tkns, _start, _end, s) Then
@@ -595,11 +578,11 @@ Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As 
 			End If
 
 			resultType = s
-
-			If procType = "SUB" Then
-				Print "; decl of SUB procedure with result type description will be treated as FUNCTION"
-			End If
 		End If
+	End If
+
+	If procType = "SUB" And resultType <> TYPE_VOID Then
+		Print "; decl of SUB procedure with result type description will be treated as FUNCTION"
 	End If
 
 	If isDecl <> FALSE Then
@@ -615,11 +598,12 @@ Function BasicSrc.tryLoadProcDeclStatement(tkns As BoxedStrArray Ptr, _start As 
 	out_statement->AddStr(_name)
 	out_statement->AddStr(resultType)
 
-	If paramType <> TYPE_VOID Then
-		out_statement->AddStr(paramName)
-		out_statement->AddStr(paramType)
+	If _params <> NULL Then
+		For i = 0 To _params->Count() - 1
+			out_statement->AddStr(_params->GetStr(i))
+		Next
+		Delete _params
 	End If
-
 	Return TRUE
 End Function
 
@@ -911,36 +895,35 @@ Function BasicSrc.tryLoadCondStatement(tkns As BoxedStrArray Ptr, _start As Long
 	End If
 
 	If (UCase(s) = "GOSUB") Or (UCase(s) = "CALL") Then
-		If tryLoadLabelName(tkns, _start + 1, _end,    i, s) Then
-			out_statement = NewStatement(STMT_GOSUB)
-			out_statement->AddStr(s)
+		If tryLoadLabelName(tkns, _start + 1, _end,    i, s) = FALSE Then
+			Return FALSE
+		End If
 
-			_start += 2
-			If trySkipKeyword(tkns, _start, _end, "(") Then
-				If trySkipKeyword(tkns, _start, _end, ")") Then
-				ElseIf tryLoadExpr(tkns, _start, _end,   _start2, _expr) Then
-					out_statement->AddMovedExpr(_expr)
+		out_statement = NewStatement(STMT_GOSUB)
+		out_statement->AddStr(s)
 
-					If trySkipKeyword(tkns, _start2, _end, ")") = FALSE Then
-						Print "; error. arguments does not end with valid expression: " + s
-
-						Delete out_statement
-						out_statement = NULL
-						Return FALSE
-					End If
-				Else
-					Print "; error. call with unknown arguments: " + s
-
-					Delete out_statement
-					out_statement = NULL
-					Return FALSE
-				End If
-			End If
-
+		If tkns->GetStr(i) <> "(" Then
+			out_next = i
 			Return TRUE
 		End If
 
-		Return FALSE
+		_expr = NewExpr(EXPR_APPLY)
+		_expr->SetVal(s)
+
+		_start = i
+		If tryLoadArgs(tkns, _start, _end,  _start2, _expr) Then
+			out_statement->AddMovedExpr(_expr)
+			out_next = _start2
+		Else
+			Print "; error. call with unknown arguments: " + s
+
+			Delete _expr
+			Delete out_statement
+			out_statement = NULL
+			Return FALSE
+		End If
+
+		Return TRUE
 	End If
 
 	If UCase(s) = "EXIT" Then

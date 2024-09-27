@@ -113,6 +113,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 	Dim _len As Long
 	Dim _lbound As Long
 	Dim s As String
+	Dim i As Long
 
 	If e->GetOpr() = EXPR_APPLY Then
 		s = e->GetVal()
@@ -127,6 +128,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			If vars.IsArray(s) Then
 				print "push " + Str(vars.GetArrayLength(s)) + "  ; SIZE("+ s +")"
 			Else
+				print "; SIZE with non-array value. replaced with 1."
 				print "push 1"
 			End If
 		ElseIf UCase(s) = "LEN" Then
@@ -140,6 +142,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			If vars.IsArray(s) Then
 				print "push " + Str(vars.GetArrayLength(s)) + "  ; LEN("+ s +")"
 			Else
+				print "; SIZE with non-array value. replaced with 1."
 				print "push 1"
 			End If
 		ELseIf UCase(s) = "LBOUND" Then
@@ -153,6 +156,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			If vars.IsArray(s) Then
 				print "push " + Str(vars.GetArrayLBound(s)) + "  ;  LBOUND("+ s +")"
 			Else
+				print "; LBOUND with non array value. replaced with 0."
 				print "push 0"
 			End If
 		ELseIf UCase(s) = "UBOUND" Then
@@ -166,32 +170,37 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			If vars.IsArray(s) Then
 				print "push " + Str(vars.GetArrayLBound(s) + vars.GetArrayLength(s) - 1)  + "  ;  UBOUND("+ s +")"
 			Else
+				print "; UBOUND with non array value. replaced with 0."
 				print "push 0"
 			End If
 		ELseIf vars.IsProc(s) Then
-			If e->GetArgc() > 0 Then
-				If vars.GetParamType(s) = TYPE_VOID Then
-					print "; no param function was called with args"
-					Return
-				End If
-
-				printExpr(e->GetArgv(0))
+			If e->GetArgc() <> vars.CountParams(s) Then
+				print "; error. invalid number of args:" + s
+				Return
 			End If
+
+			For i = e->GetArgc() - 1 To 0 Step -1
+				printExpr(e->GetArgv(i))
+			Next
 
 			print "call " + vars.CorrectProcName(s)
-			If e->GetArgc() > 0 Then
+
+			For i = 0 To e->GetArgc() - 1 
 				print "pop " + registerName("d")
-			End If
+			Next
 
 			If vars.GetResultType(s) = TYPE_VOID Then
-				print "; void was returned. check is it not inside expr?" 
+				print "; void was returned. is it not inside expr?" 
 			Else
 				print "push " + registerName("a")
 			End If
 		ElseIf vars.IsArray(s) Then
 			If e->GetArgc() = 0 Then
-					print "* error *"
-					Return
+				print "; error. array with empty indexer."
+				Return
+			ElseIf e->GetArgc() <> 1 Then
+				print "; error. multi-dimensional array is not implemented."
+				Return
 			End If
 
 			printExpr(e->GetArgv(0))
@@ -425,21 +434,23 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 			End If
 			Return TRUE
 		Case STMT_GOSUB
-			s = stmt->GetStr(0)
-
-			For i = 0 To stmt->CountExprs() - 1
-				printExpr(stmt->GetExpr(i))
-			Next
-
-			If IsNum(Asc(Mid$(s, 1, 1))) Then
-				print "call BC_LINE_" + s
+			If stmt->CountExprs() = 0 Then
+				s = stmt->GetStr(0)
+				If IsNum(Asc(Mid$(s, 1, 1))) Then
+					print "call BC_LINE_" + s
+				Else
+					print "call " + s
+				End If
 			Else
-				print "call " + s
-			End If
+				e = stmt->GetExpr(0)
 
-			For i = 0 To stmt->CountExprs() - 1
-				Print "pop " + registerName("d")
-			Next
+				printExpr(e)
+
+				s = e->GetVal()
+				If vars.GetResultType(s) <> TYPE_VOID Then
+					Print "pop " + registerName("d")
+				End If
+			End If
 
 			Return TRUE
 		Case STMT_RETURN
@@ -546,7 +557,7 @@ Function BasicCompiler.tryLoadDeclsFromStatement(stmt As Statement Ptr, ByRef en
 	Dim attr As String
 	Dim _name As String
 	Dim resultType As String
-	Dim paramType As String
+	Dim _params As BoxedStrArray Ptr
 
 	If stmt = NULL Then  Return TRUE
 
@@ -556,22 +567,29 @@ Function BasicCompiler.tryLoadDeclsFromStatement(stmt As Statement Ptr, ByRef en
 		Case STMT_LABEL_OR_CALL
 			Return TRUE
 		Case STMT_DECL_PROC
+			Print "; decl proc! argc:", stmt->CountStrs()
 			attr = stmt->GetStr(0)
 			_name = stmt->GetStr(1)
-			If stmt->CountStrs() <= 2 Then
-				resultType = TYPE_VOID
-				paramType = TYPE_VOID
-			ElseIf stmt->CountStrs() <= 3 Then
-				resultType = stmt->GetStr(2)
-				paramType = TYPE_VOID
-			ElseIf stmt->CountStrs() <= 5 Then
-				resultType = stmt->GetStr(2)
-				paramType = stmt->GetStr(4)
+			resultType = stmt->GetStr(2)
+			_params = NULL
+			
+			If stmt->CountStrs() > 3 Then
+				Print "; params!"
+				_params = NewBoxedStrArray()
+				For i = 3 To stmt->CountStrs() - 1
+					Print "; param: ", stmt->GetStr(i)
+					_params->AddStr(stmt->GetStr(i)) 
+				Next
 			End If
 
-			Print ";decl proc " + _name + "("+paramType+")as " + resultType +" attr:("+attr+")"
+			If _params <> NULL Then
+				Print ";decl proc " + _name + "/" + Str$(_params->Count() / 2) + " as " + resultType +" attr:("+attr+")"
+			Else
+				Print ";decl proc " + _name + " as " + resultType +" attr:("+attr+")"
+			End If
 
-			env->AddProc(_name, paramType, resultType, attr)
+			env->AddProc(_name, _params, resultType, attr)
+			If _params <> NULL Then  Delete _params
 			Return TRUE
 		Case STMT_DECL_VAR
 			attr = stmt->GetStr(0)
