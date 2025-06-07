@@ -173,6 +173,12 @@ Function BasicSrc.tryLoadExprVal(tkns As BoxedStrArray Ptr, _start As Long, _end
 		out_next = _start + 1
 		out_expr = e
 		Return TRUE
+	ElseIf IsQrt(Asc(Mid$(s, 1,1))) Then
+		e = NewExpr(EXPR_VAL)
+		e->SetVal(s)
+		out_next = _start + 1
+		out_expr = e
+		Return TRUE
 	ElseIf IsNamHead(Asc(Mid$(s, 1,1))) Then
 		e = NewExpr(EXPR_VAL)
 		e->SetVal(s)

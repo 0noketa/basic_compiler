@@ -21,6 +21,7 @@ Type BasicCompiler
 		lines_are_disabled As Long
 		int_size As Long
 		use_thread_local As Long
+		_n_tmp_labels As Long
 	Public:
 		Declare Constructor()
 		Declare Sub Init(s As String)
@@ -97,14 +98,12 @@ Function BasicCompiler.dataDefName() As String
 End Function
 
 Function BasicCompiler.registerName(code As String) As String
-	If InStr(1, "acdb", code) = 0 Then 
-		Return "error_reg"
-	ElseIf int_size = 64 Then
-		Return "r" + code + "x"
+	If int_size = 64 Then
+		Return "r" + code
 	ElseIf int_size = 32 Then
-		Return "e" + code + "x"
+		Return "e" + code
 	Else
-		Return code + "x"
+		Return code
 	End If
 End Function
 
@@ -141,9 +140,52 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			s = e2->GetVal()
 			If vars.IsArray(s) Then
 				print "push " + Str(vars.GetArrayLength(s)) + "  ; LEN("+ s +")"
+			ElseIf vars.IsStrVar(s) Then
+				print "xor " + registerName("ax") + ", " + registerName("ax")
+				print "mov " + registerName("dx") + ", " + registerName("sp")
+				print "jmp BC_TMP_" + Str$(_n_tmp_labels + 1)
+				print "BC_TMP_" + Str$(_n_tmp_labels) + ":"
+				print "add " + registerName("dx") + ", " + Str$(int_size)
+				print "add " + registerName("ax") + ", 1"
+				print "BC_TMP_" + Str$(_n_tmp_labels + 1) + ":"
+				print "cmp [" + registerName("dx") + "], 0"
+				print "jnz BC_TMP_" + Str$(_n_tmp_labels)
+				print "push " + registerName("ax")
+
+				_n_tmp_labels += 2
+			ElseIf vars.IsStrVal(s) Then
+				print "push " + Str$(Len(s) - 2)
 			Else
-				print "; SIZE with non-array value. replaced with 1."
+				print "; LEN with non-array value. replaced with 1."
 				print "push 1"
+			End If
+		ELseIf UCase(s) = "ASC" Then
+			If e->GetArgc() = 0 Then
+				print "; no arg for " + s
+				Return
+			End If
+
+			e2 = e->GetArgv(0)
+			s = e2->GetVal()
+			If vars.IsArray(s) Then
+				print "push " + Str(vars.GetArrayLBound(s)) + "  ;  LBOUND("+ s +")"
+			ElseIf vars.IsStrVar(s) Then
+				print "mov " + registerName("ax") + ", " + registerName("sp")
+				print "jmp BC_TMP_" + Str$(_n_tmp_labels + 1)
+				print "BC_TMP_" + Str$(_n_tmp_labels) + ":"
+				print "add " + registerName("ax") + ", " + Str$(int_size)
+				print "BC_TMP_" + Str$(_n_tmp_labels + 1) + ":"
+				print "cmp [" + registerName("ax") + "], 0"
+				print "jnz BC_TMP_" + Str$(_n_tmp_labels)
+				print "mov " + registerName("sp") + ", " + registerName("ax")
+				print "push [" + registerName("ax") + " + " +  Str$(int_size) + "]"
+
+				_n_tmp_labels += 2
+			ElseIf vars.IsStrVal(s) Then
+				print "push " + Str$(Asc(Mid$(s, 2, 1)))
+			Else
+				print "; ASC with non array value. replaced with 0."
+				print "push 0"
 			End If
 		ELseIf UCase(s) = "LBOUND" Then
 			If e->GetArgc() = 0 Then
@@ -186,13 +228,13 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			print "call " + vars.CorrectProcName(s)
 
 			For i = 0 To e->GetArgc() - 1 
-				print "pop " + registerName("d")
+				print "pop " + registerName("dx")
 			Next
 
 			If vars.GetResultType(s) = TYPE_VOID Then
 				print "; void was returned. is it not inside expr?" 
 			Else
-				print "push " + registerName("a")
+				print "push " + registerName("ax")
 			End If
 		ElseIf vars.IsArray(s) Then
 			If e->GetArgc() = 0 Then
@@ -207,19 +249,19 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 			_lbound = vars.GetArrayLBound(s)
 
 			If int_size = 16 Then
-				print "pop " + registerName("b")
+				print "pop " + registerName("bx")
 				If _lbound <> 0 Then
-					print "sub " + registerName("b") + ", " + Str(_lbound)
+					print "sub " + registerName("bx") + ", " + Str(_lbound)
 				End If
-				print "shl " + registerName("b") + ", " + Str(int_size / 8)
-				print "add " + registerName("b") + ", " + s
-				print "push " + wordName() + "[" + registerName("b") + "]"
+				print "shl " + registerName("bx") + ", " + Str(int_size / 8)
+				print "add " + registerName("bx") + ", " + s
+				print "push " + wordName() + "[" + registerName("bx") + "]"
 			Else
-				print "pop " + registerName("a")
+				print "pop " + registerName("ax")
 				If _lbound <> 0 Then
-					print "sub " + registerName("a") + ", " + Str(_lbound)
+					print "sub " + registerName("ax") + ", " + Str(_lbound)
 				End If
-				print "push " + wordName() + "[" + vars.CorrectVarName(s) + "+" + registerName("a") + "*" + Str(int_size / 8) + "]"
+				print "push " + wordName() + "[" + vars.CorrectVarName(s) + "+" + registerName("ax") + "*" + Str(int_size / 8) + "]"
 			End If
 		End If
 	Else
@@ -229,7 +271,7 @@ Sub BasicCompiler.printExprVal(e As Expr Ptr)
 		End If
 
 		s = e->GetVal()
-		If IsNum(Asc(Mid$(s, 1,1))) Then
+		If vars.IsNumVal(s) Then
 			print "push " + wordName() + " " + s
 		Else
 			If Not vars.IsVar(s) Then
@@ -252,19 +294,19 @@ Sub BasicCompiler.printExprMul(e As Expr Ptr)
 			For i = 0 To 1
 				printExprVal(e->GetArgv(i))
 			Next
-			print "pop " + registerName("c")
-			print "pop " + registerName("a")
+			print "pop " + registerName("cx")
+			print "pop " + registerName("ax")
 			If s = "*" Then
-				print "imul " + registerName("c")
+				print "imul " + registerName("cx")
 			Else
-				print "xor " + registerName("d") + ", " + registerName("d")
-				print "idiv " + registerName("c")
+				print "xor " + registerName("dx") + ", " + registerName("dx")
+				print "idiv " + registerName("cx")
 			End If
 
 			If UCase(s) = "MOD" Then
-				print "push " + registerName("d")
+				print "push " + registerName("dx")
 			Else
-				print "push " + registerName("a")
+				print "push " + registerName("ax")
 			End If
 		End If
 	Else
@@ -279,15 +321,15 @@ Sub BasicCompiler.printExprAdd(e As Expr Ptr)
 		For i = 0 To 1
 			printExprMul(e->GetArgv(i))
 		Next
-		print "pop " + registerName("c")
-		print "pop " + registerName("a")
+		print "pop " + registerName("cx")
+		print "pop " + registerName("ax")
 		If s = "+" Then
 			s = "add"
 		Else
 			s = "sub"
 		End If
-		print s + " " + registerName("a") + ", " + registerName("c")
-		print "push " + registerName("a")
+		print s + " " + registerName("ax") + ", " + registerName("cx")
+		print "push " + registerName("ax")
 	Else
 		printExprMul(e)
 	End If
@@ -305,12 +347,12 @@ Sub BasicCompiler.printExprCmp(e As Expr Ptr)
 			s = "e"
 		End Select
 
-		print "pop " + registerName("c")
-		print "pop " + registerName("d")
-		print "xor " + registerName("a") + ", " + registerName("a")
-		print "cmp " + registerName("d") + ", " + registerName("c")
-		print "mov" + s + " " + registerName("a") + ", 1"
-		print "push " + registerName("a")
+		print "pop " + registerName("cx")
+		print "pop " + registerName("dx")
+		print "xor " + registerName("ax") + ", " + registerName("ax")
+		print "cmp " + registerName("dx") + ", " + registerName("cx")
+		print "mov" + s + " " + registerName("ax") + ", 1"
+		print "push " + registerName("ax")
 	Else
 		printExprAdd(e)
 	End If
@@ -328,12 +370,12 @@ Sub BasicCompiler.printExprAssign(e As Expr Ptr)
 		If dst->GetOpr() = EXPR_APPLY Then
 			printExprCmp(dst->GetArgv(0))
 
-			print "pop " + registerName("a")
+			print "pop " + registerName("ax")
 			If Not vars.IsVar(s) Then
 				Print "; error. unknown array: " + s
 			End If
 
-			print "pop " + wordName() + "[" + vars.CorrectVarName(s) + "+" + registerName("a") + "*" + Str(int_size / 8) + "]"
+			print "pop " + wordName() + "[" + vars.CorrectVarName(s) + "+" + registerName("ax") + "*" + Str(int_size / 8) + "]"
 		Else
 			If Not vars.IsVar(s) Then
 				Print "; inline decl " + s
@@ -368,14 +410,14 @@ Sub BasicCompiler.printCondJump(e As Expr Ptr, cond As Long, label As String)
 
 		printExprCmp(e->GetArgv(0))
 		printExprCmp(e->GetArgv(1))
-		print "pop " + registerName("d")
-		print "pop " + registerName("a")
-		print "cmp " + registerName("a") + ", " + registerName("d")
+		print "pop " + registerName("dx")
+		print "pop " + registerName("ax")
+		print "cmp " + registerName("ax") + ", " + registerName("dx")
 		print s + " " + label
 	Else
 		If cond Then s = "jnz" Else s = "jz"
 		printExprAdd(e)
-		print "or " + registerName("a") + ", " + registerName("a")
+		print "or " + registerName("ax") + ", " + registerName("ax")
 		print s + " " + label
 	End If
 End Sub
@@ -427,7 +469,7 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 			Return tryPrintStatement(stmt->GetStatement(0),  line_number)
 		Case STMT_GOTO
 			s = stmt->GetStr(0)
-			If IsNum(Asc(Mid$(s, 1, 1))) Then
+			If vars.IsNumVal(s) Then
 				print "jmp BC_LINE_" + s
 			Else
 				print "jmp " + s
@@ -436,7 +478,7 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 		Case STMT_GOSUB
 			If stmt->CountExprs() = 0 Then
 				s = stmt->GetStr(0)
-				If IsNum(Asc(Mid$(s, 1, 1))) Then
+				If vars.IsNumVal(s) Then
 					print "call BC_LINE_" + s
 				Else
 					print "call " + s
@@ -448,7 +490,7 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 
 				s = e->GetVal()
 				If vars.GetResultType(s) <> TYPE_VOID Then
-					Print "pop " + registerName("d")
+					Print "pop " + registerName("dx")
 				End If
 			End If
 
@@ -480,13 +522,13 @@ Function BasicCompiler.tryPrintStatement(stmt As Statement Ptr, ByRef line_numbe
 
 				printExprCmp(e->GetArgv(0))
 				printExprCmp(e->GetArgv(1))
-				print "pop " + registerName("d")
-				print "pop " + registerName("a")
-				print "cmp " + registerName("a") + ", " + registerName("d")
+				print "pop " + registerName("dx")
+				print "pop " + registerName("ax")
+				print "cmp " + registerName("ax") + ", " + registerName("dx")
 			Else
 				If goto_without_keyword Then s = "jnz" Else s = "jz"
 				printExprAdd(e)
-				print "or " + registerName("a") + ", " + registerName("a")
+				print "or " + registerName("ax") + ", " + registerName("ax")
 			End If
 
 			If stmt->CountStatements() >= 2 Then

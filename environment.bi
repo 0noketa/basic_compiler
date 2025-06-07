@@ -267,11 +267,16 @@ Type Environment
 		Declare Function IsVarOrProc(_name As String) As Long
 		Declare Function IsProc(_name As String) As Long
 		Declare Function IsVar(_name As String) As Long
+		Declare Function IsNumVal(_name As String) As Long
+		Declare Function IsStrVal(_name As String) As Long
+		Declare Function IsStrVar(_name As String) As Long
 		Declare Function GetArrayLBound(_name As String) As Long
 		Declare Function GetArrayLength(_name As String) As Long
 		Declare Function IsArray(_name As String) As Long
 		Declare Function AttrInVar(_name As String, attr As String) As Long
 		Declare Function AttrInProc(_name As String, attr As String) As Long
+		Declare Function GetVarType(_idx As Long) As String
+		Declare Function GetVarTypeByName(_name As String) As String
 		Declare Function CountParams(proc_name As String) As Long
 		Declare Function GetParamName(proc_name As String, idx As Long) As String
 		Declare Function GetParamType(proc_name As String, idx As Long) As String
@@ -355,6 +360,27 @@ Function Environment.IsProc(_name As String) As Long
 End Function
 Function Environment.IsVar(_name As String) As Long
 	Return (GetVarIndex(_name) <> -1)
+End Function
+Function Environment.IsNumVal(_name As String) As Long
+	Return IsNum(Asc(Mid$(_name, 1, 1)))
+End Function
+Function Environment.IsStrVal(_name As String) As Long
+	Return IsQrt(Asc(Mid$(_name, 1, 1)))
+End Function
+Function Environment.GetVarType(_idx As Long) As String
+	Dim info As VarInfo Ptr = GetVarInfo(_idx)
+	If info = NULL Then  Return TYPE_VOID
+	
+	Return info->GetType()
+End Function
+Function Environment.GetVarTypeByName(_name As String) As String
+	Dim i As Long = GetVarIndex(_name)
+	If i = -1 Then  Return TYPE_VOID
+	
+	Return GetVarType(i)
+End Function
+Function Environment.IsStrVar(_name As String) As Long
+	Return (GetVarTypeByName(_name) = TYPE_STRING)
 End Function
 Function Environment.GetArrayLBound(_name As String) As Long
 	Dim i As Long : i = GetVarIndex(_name)
